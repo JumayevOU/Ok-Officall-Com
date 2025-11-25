@@ -1,9 +1,8 @@
 import calendar
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
-from typing import Dict, List, Any, Tuple, Optional
+from typing import Dict, List, Any, Tuple
 from pathlib import Path
-import os
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
@@ -13,38 +12,30 @@ from openpyxl.worksheet.worksheet import Worksheet
 # Logger sozlamalari
 logger = logging.getLogger(__name__)
 
-# Style konstantalari
 class ExcelStyles:
     """Excel stil konstantalari"""
-    YELLOW_FILL = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
-    RED_FILL = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")
-    GREEN_FILL = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")
-    GRAY_FILL = PatternFill(start_color="F0F0F0", end_color="F0F0F0", fill_type="solid")
+    HEADER_FILL = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+    SUBHEADER_FILL = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
+    LOCATION_FILL = PatternFill(start_color="FCD5B4", end_color="FCD5B4", fill_type="solid")
+    WEEKEND_FILL = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
     
-    BOLD_FONT = Font(bold=True, name='Arial', size=10)
-    HEADER_FONT = Font(bold=True, name='Arial', size=12, color="000000")
+    HEADER_FONT = Font(bold=True, name='Arial', size=10, color="FFFFFF")
     NORMAL_FONT = Font(name='Arial', size=9)
+    BOLD_FONT = Font(bold=True, name='Arial', size=9)
     
-    ROTATE_TEXT = Alignment(text_rotation=90, horizontal="center", vertical="center")
     CENTER = Alignment(horizontal="center", vertical="center")
     LEFT = Alignment(horizontal="left", vertical="center")
     RIGHT = Alignment(horizontal="right", vertical="center")
     
-    THIN_BORDER = Border(
+    BORDER = Border(
         left=Side(style='thin'), 
         right=Side(style='thin'), 
         top=Side(style='thin'), 
         bottom=Side(style='thin')
     )
-    MEDIUM_BORDER = Border(
-        left=Side(style='medium'), 
-        right=Side(style='medium'), 
-        top=Side(style='medium'), 
-        bottom=Side(style='medium')
-    )
 
-class ExcelReportGenerator:
-    """Excel hisobot generatori"""
+class AdvancedExcelGenerator:
+    """Kengaytirilgan Excel hisobot generatori"""
     
     def __init__(self, year: int, month: int):
         self.year = year
@@ -52,16 +43,18 @@ class ExcelReportGenerator:
         self.num_days = calendar.monthrange(year, month)[1]
         self.wb = Workbook()
         self.ws = self.wb.active
-        self.ws.title = f"Davomat {month:02d}.{year}"
+        self.ws.title = f"Hisobot {month:02d}.{year}"
         
         # Ma'lumotlar
         self.workers_data = []
         self.attendance_data = {}
         self.advances_data = {}
         
-        # Hisoblar
+        # Excel parametrlari
         self.current_row = 1
-        self.start_calc_col = 0
+        self.name_col = 1
+        self.first_day_col = 2
+        self.calc_start_col = self.first_day_col + self.num_days
         
     def validate_input_data(self) -> Tuple[bool, str]:
         """Kirish ma'lumotlarini tekshirish"""
@@ -74,84 +67,102 @@ class ExcelReportGenerator:
         if not isinstance(self.advances_data, dict):
             return False, "Avans ma'lumotlari noto'g'ri formatda"
         
-        if self.month < 1 or self.month > 12:
-            return False, "Oy noto'g'ri (1-12 oralig'ida bo'lishi kerak)"
-        
-        if self.year < 2000 or self.year > 2100:
-            return False, "Yil noto'g'ri"
-        
         return True, "OK"
     
     def setup_column_widths(self):
         """Ustun kengliklarini sozlash"""
         try:
-            # Asosiy ustunlar
-            self.ws.column_dimensions['A'].width = 30  # Ism
-            self.ws.column_dimensions['B'].width = 15  # Lokatsiya
+            # Ism ustuni
+            self.ws.column_dimensions['A'].width = 25
             
-            # Kunlar uchun tor ustunlar
+            # Kunlar uchun ustunlar
             for day in range(1, self.num_days + 1):
-                col_letter = get_column_letter(day + 2)  # C, D, E, ...
+                col_letter = get_column_letter(self.first_day_col + day - 1)
                 self.ws.column_dimensions[col_letter].width = 4
             
             # Hisoblash ustunlari
-            calc_columns = 6
-            for i in range(calc_columns):
-                col_letter = get_column_letter(self.start_calc_col + i)
-                self.ws.column_dimensions[col_letter].width = 12
+            calc_columns = ["Soatlik", "Jami Soat", "Avans", "Maosh", "Qoldiq"]
+            for i in range(len(calc_columns)):
+                col_letter = get_column_letter(self.calc_start_col + i)
+                self.ws.column_dimensions[col_letter].width = 10
                 
         except Exception as e:
             logger.error(f"❌ Ustun kengliklarini sozlashda xatolik: {e}")
     
-    def create_header(self):
-        """Sarlavha yaratish"""
+    def create_main_header(self):
+        """Asosiy sarlavha yaratish"""
         try:
             # Asosiy sarlavha
-            self.ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=self.start_calc_col + 5)
-            title_cell = self.ws.cell(row=1, column=1, 
-                                    value=f"DAVOMAT HISOBOTI - {self.month:02d}.{self.year}")
-            title_cell.font = Font(bold=True, name='Arial', size=14, color="000080")
+            end_col = self.calc_start_col + 4
+            self.ws.merge_cells(
+                start_row=self.current_row, 
+                start_column=1, 
+                end_row=self.current_row, 
+                end_column=end_col
+            )
+            
+            title_cell = self.ws.cell(
+                row=self.current_row, 
+                column=1, 
+                value=f"ISHCHILAR DAVOMATI - {self.month:02d}/{self.year}"
+            )
+            title_cell.font = Font(bold=True, name='Arial', size=14, color="000000")
             title_cell.alignment = ExcelStyles.CENTER
-            title_cell.fill = PatternFill(start_color="E6E6FA", end_color="E6E6FA", fill_type="solid")
+            title_cell.fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
             
-            self.current_row = 3
+            self.current_row += 2
             
-            # Jadval sarlavhasi
-            headers = ["F.I.O", "Lokatsiya"]  # Lokatsiya qo'shildi
+        except Exception as e:
+            logger.error(f"❌ Asosiy sarlavha yaratishda xatolik: {e}")
+            raise
+    
+    def create_dates_header(self):
+        """Sanalar sarlavhasini yaratish"""
+        try:
+            # Ism uchun bosh joy
+            cell = self.ws.cell(row=self.current_row, column=self.name_col, value="F.I.O")
+            cell.font = ExcelStyles.HEADER_FONT
+            cell.alignment = ExcelStyles.CENTER
+            cell.fill = ExcelStyles.HEADER_FILL
+            cell.border = ExcelStyles.BORDER
             
-            # Kunlar
+            # Sanalar
             for day in range(1, self.num_days + 1):
-                date_str = f"{day:02d}"
-                headers.append(date_str)
-            
-            # Hisoblash ustunlari
-            calc_headers = ["Soatlik Narx", "Jami Soat", "O'rtacha", "Avans", "Jami Maosh", "Qo'lga Tegadi"]
-            headers.extend(calc_headers)
-            
-            # Sarlavha qatorini yozish
-            for col_idx, header in enumerate(headers, 1):
-                cell = self.ws.cell(row=self.current_row, column=col_idx, value=header)
-                cell.font = ExcelStyles.BOLD_FONT
-                cell.alignment = ExcelStyles.CENTER
-                cell.fill = ExcelStyles.YELLOW_FILL
-                cell.border = ExcelStyles.THIN_BORDER
+                col_idx = self.first_day_col + day - 1
+                date_obj = datetime(self.year, self.month, day)
+                date_str = date_obj.strftime("%d.%m")
                 
-                # Kunlar ustunlariga aylantirish
-                if 3 <= col_idx <= self.num_days + 2:
-                    cell.alignment = ExcelStyles.ROTATE_TEXT
+                cell = self.ws.cell(row=self.current_row, column=col_idx, value=date_str)
+                cell.font = ExcelStyles.HEADER_FONT
+                cell.alignment = ExcelStyles.CENTER
+                cell.fill = ExcelStyles.HEADER_FILL
+                cell.border = ExcelStyles.BORDER
+                
+                # Dam olish kunlari uchun fon
+                if date_obj.weekday() >= 5:  # 5=Shanba, 6=Yakshanba
+                    cell.fill = ExcelStyles.WEEKEND_FILL
             
-            self.start_calc_col = self.num_days + 3  # Hisoblash ustunlari boshlanishi
+            # Hisoblash ustunlari sarlavhalari
+            calc_headers = ["Soatlik", "Jami Soat", "Avans", "Maosh", "Qoldiq"]
+            for i, header in enumerate(calc_headers):
+                col_idx = self.calc_start_col + i
+                cell = self.ws.cell(row=self.current_row, column=col_idx, value=header)
+                cell.font = ExcelStyles.HEADER_FONT
+                cell.alignment = ExcelStyles.CENTER
+                cell.fill = ExcelStyles.HEADER_FILL
+                cell.border = ExcelStyles.BORDER
+            
             self.current_row += 1
             
         except Exception as e:
-            logger.error(f"❌ Sarlavha yaratishda xatolik: {e}")
+            logger.error(f"❌ Sanalar sarlavhasini yaratishda xatolik: {e}")
             raise
     
     def group_workers_by_location(self) -> Dict[str, List[Dict]]:
         """Ishchilarni lokatsiya bo'yicha guruhlash"""
         grouped = {}
         for worker in self.workers_data:
-            loc = worker.get('location', 'Noma\'lum') or 'Noma\'lum'
+            loc = worker.get('location', 'Noma\'lum')
             if loc not in grouped:
                 grouped[loc] = []
             grouped[loc].append(worker)
@@ -161,28 +172,28 @@ class ExcelReportGenerator:
         """Lokatsiya bo'limini yaratish"""
         try:
             # Lokatsiya sarlavhasi
-            end_col = self.start_calc_col + 5
-            self.ws.merge_cells(start_row=self.current_row, start_column=1, 
-                               end_row=self.current_row, end_column=end_col)
+            end_col = self.calc_start_col + 4
+            self.ws.merge_cells(
+                start_row=self.current_row, 
+                start_column=1, 
+                end_row=self.current_row, 
+                end_column=end_col
+            )
             
-            location_cell = self.ws.cell(row=self.current_row, column=1, 
-                                       value=f"📍 {location.upper()}")
-            location_cell.font = ExcelStyles.HEADER_FONT
+            location_cell = self.ws.cell(row=self.current_row, column=1, value=f"{location}")
+            location_cell.font = ExcelStyles.BOLD_FONT
             location_cell.alignment = ExcelStyles.CENTER
-            location_cell.fill = ExcelStyles.GREEN_FILL
+            location_cell.fill = ExcelStyles.LOCATION_FILL
             
             # Border qo'shish
             for col in range(1, end_col + 1):
-                self.ws.cell(row=self.current_row, column=col).border = ExcelStyles.THIN_BORDER
+                self.ws.cell(row=self.current_row, column=col).border = ExcelStyles.BORDER
             
             self.current_row += 1
             
             # Ishchilar ma'lumotlari
             for worker in workers:
                 self.add_worker_row(worker)
-            
-            # Bo'sh qator
-            self.current_row += 1
             
         except Exception as e:
             logger.error(f"❌ Lokatsiya bo'limini yaratishda xatolik: {e}")
@@ -191,54 +202,52 @@ class ExcelReportGenerator:
     def add_worker_row(self, worker: Dict[str, Any]):
         """Ishchi qatorini qo'shish"""
         try:
-            # Asosiy ma'lumotlar
-            self.ws.cell(row=self.current_row, column=1, value=worker['name']).border = ExcelStyles.THIN_BORDER
-            self.ws.cell(row=self.current_row, column=2, value=worker.get('location', '')).border = ExcelStyles.THIN_BORDER
+            # Ism-familiya
+            name_cell = self.ws.cell(row=self.current_row, column=self.name_col, value=worker['name'])
+            name_cell.font = ExcelStyles.NORMAL_FONT
+            name_cell.alignment = ExcelStyles.LEFT
+            name_cell.border = ExcelStyles.BORDER
             
             total_hours = 0
             work_days = 0
             
-            # Davomat ma'lumotlari
+            # Har bir kun uchun davomat
             for day in range(1, self.num_days + 1):
-                col_idx = day + 2  # C ustunidan boshlanadi
+                col_idx = self.first_day_col + day - 1
                 date_key = f"{self.year}-{self.month:02d}-{day:02d}"
-                hours = self.attendance_data.get((worker['id'], date_key))
+                hours = self.attendance_data.get((worker['id'], date_key), 0)
                 
                 cell = self.ws.cell(row=self.current_row, column=col_idx)
-                cell.border = ExcelStyles.THIN_BORDER
+                cell.border = ExcelStyles.BORDER
                 cell.alignment = ExcelStyles.CENTER
                 cell.font = ExcelStyles.NORMAL_FONT
                 
-                if hours is not None:
-                    if hours == 0:
-                        cell.fill = ExcelStyles.RED_FILL
-                        cell.value = ""  # 0 soat bo'lsa bo'sh qoldirish
-                    else:
-                        cell.value = hours
-                        total_hours += hours
-                        work_days += 1
+                if hours > 0:
+                    cell.value = hours
+                    total_hours += hours
+                    work_days += 1
+                else:
+                    cell.value = ""
             
             # Hisob-kitoblar
             rate = worker.get('rate', 0)
             advance = self.advances_data.get(worker['id'], 0)
             total_salary = total_hours * rate
-            average_hours = total_hours / work_days if work_days > 0 else 0
             net_salary = total_salary - advance
             
             # Hisoblash ustunlari
-            calc_cells = [
+            calc_data = [
                 (rate, ExcelStyles.RIGHT),
                 (total_hours, ExcelStyles.CENTER),
-                (round(average_hours, 1), ExcelStyles.CENTER),
                 (advance, ExcelStyles.RIGHT),
                 (total_salary, ExcelStyles.RIGHT),
                 (net_salary, ExcelStyles.RIGHT)
             ]
             
-            for i, (value, alignment) in enumerate(calc_cells):
-                col_idx = self.start_calc_col + i
+            for i, (value, alignment) in enumerate(calc_data):
+                col_idx = self.calc_start_col + i
                 cell = self.ws.cell(row=self.current_row, column=col_idx, value=value)
-                cell.border = ExcelStyles.THIN_BORDER
+                cell.border = ExcelStyles.BORDER
                 cell.alignment = alignment
                 cell.font = ExcelStyles.NORMAL_FONT
                 
@@ -246,13 +255,13 @@ class ExcelReportGenerator:
                 if isinstance(value, (int, float)):
                     cell.number_format = '#,##0'
             
-            # Qo'lga tegadi ustunini qalin qilish
-            net_cell = self.ws.cell(row=self.current_row, column=self.start_calc_col + 5)
+            # Qoldiq ustunini qalin qilish
+            net_cell = self.ws.cell(row=self.current_row, column=self.calc_start_col + 4)
             net_cell.font = ExcelStyles.BOLD_FONT
             
             # Agar qoldiq manfiy bo'lsa, qizil rang
             if net_salary < 0:
-                net_cell.fill = ExcelStyles.RED_FILL
+                net_cell.fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")
             
             self.current_row += 1
             
@@ -267,18 +276,21 @@ class ExcelReportGenerator:
             self.current_row += 1
             
             # Yig'indi sarlavhasi
-            end_col = self.start_calc_col + 5
-            self.ws.merge_cells(start_row=self.current_row, start_column=1, 
-                               end_row=self.current_row, end_column=end_col)
+            end_col = self.calc_start_col + 4
+            self.ws.merge_cells(
+                start_row=self.current_row, 
+                start_column=1, 
+                end_row=self.current_row, 
+                end_column=end_col
+            )
             
-            summary_cell = self.ws.cell(row=self.current_row, column=1, 
-                                      value="📊 UMUMIY YIG'INDI")
-            summary_cell.font = ExcelStyles.HEADER_FONT
+            summary_cell = self.ws.cell(row=self.current_row, column=1, value="UMUMIY YIG'INDI")
+            summary_cell.font = ExcelStyles.BOLD_FONT
             summary_cell.alignment = ExcelStyles.CENTER
-            summary_cell.fill = ExcelStyles.GRAY_FILL
+            summary_cell.fill = PatternFill(start_color="E6E6E6", end_color="E6E6E6", fill_type="solid")
             
             for col in range(1, end_col + 1):
-                self.ws.cell(row=self.current_row, column=col).border = ExcelStyles.THIN_BORDER
+                self.ws.cell(row=self.current_row, column=col).border = ExcelStyles.BORDER
             
             self.current_row += 1
             
@@ -310,24 +322,24 @@ class ExcelReportGenerator:
                 total_net += net
             
             # Yig'indi qatorini yozish
-            summary_data = [
-                f"Jami ishchilar: {total_workers}",
-                "",
-                f"Jami soatlar: {total_hours}",
-                f"Jami avans: {total_advance:,.0f}",
-                f"Jami maosh: {total_salary:,.0f}",
-                f"Jami to'lov: {total_net:,.0f}"
-            ]
+            summary_labels = ["Jami ishchilar:", "Jami soatlar:", "Jami avans:", "Jami maosh:", "Jami to'lov:"]
+            summary_values = [total_workers, total_hours, total_advance, total_salary, total_net]
             
-            for i, value in enumerate(summary_data):
-                col_idx = self.start_calc_col + i
-                cell = self.ws.cell(row=self.current_row, column=col_idx, value=value)
-                cell.border = ExcelStyles.THIN_BORDER
-                cell.font = ExcelStyles.BOLD_FONT
-                cell.alignment = ExcelStyles.LEFT
+            for i, (label, value) in enumerate(zip(summary_labels, summary_values)):
+                col_idx = self.calc_start_col + i
                 
-                if i >= 2:  # Raqamli qiymatlar
-                    cell.alignment = ExcelStyles.RIGHT
+                # Label
+                label_cell = self.ws.cell(row=self.current_row, column=col_idx - 1, value=label)
+                label_cell.font = ExcelStyles.BOLD_FONT
+                label_cell.alignment = ExcelStyles.RIGHT
+                label_cell.border = ExcelStyles.BORDER
+                
+                # Value
+                value_cell = self.ws.cell(row=self.current_row, column=col_idx, value=value)
+                value_cell.font = ExcelStyles.BOLD_FONT
+                value_cell.alignment = ExcelStyles.RIGHT
+                value_cell.border = ExcelStyles.BORDER
+                value_cell.number_format = '#,##0'
             
         except Exception as e:
             logger.error(f"❌ Yig'indi bo'limini yaratishda xatolik: {e}")
@@ -336,9 +348,9 @@ class ExcelReportGenerator:
         """Avto filtrlarni qo'llash"""
         try:
             # Sarlavha qatoriga filtrlarni qo'llash
-            header_row = 3
-            last_col = self.start_calc_col + 5
-            self.ws.auto_filter.ref = f"A{header_row}:{get_column_letter(last_col)}{header_row}"
+            header_row = 3  # Sanalar sarlavhasi qatori
+            last_col = self.calc_start_col + 4
+            self.ws.auto_filter.ref = f"A{header_row}:{get_column_letter(last_col)}{self.current_row}"
         except Exception as e:
             logger.warning(f"⚠️ Avto filtrlarni qo'llashda xatolik: {e}")
     
@@ -357,13 +369,15 @@ class ExcelReportGenerator:
             
             # Excel sozlamalari
             self.setup_column_widths()
-            self.create_header()
+            self.create_main_header()
+            self.create_dates_header()
             
             # Ishchilarni guruhlash va bo'limlarni yaratish
             grouped_workers = self.group_workers_by_location()
             
             for location, workers in sorted(grouped_workers.items()):
                 self.create_location_section(location, workers)
+                self.current_row += 1  # Bo'sh qator qo'shish
             
             # Yig'indi bo'limi
             self.create_summary_section()
@@ -385,19 +399,13 @@ class ExcelReportGenerator:
         """Faylni saqlash"""
         try:
             # Fayl nomini yaratish
-            reports_dir = Path("reports")
-            reports_dir.mkdir(exist_ok=True)
-            
-            filename = reports_dir / f"Hisobot_{self.year}_{self.month:02d}.xlsx"
+            filename = f"Hisobot_{self.year}_{self.month:02d}.xlsx"
             
             # Faylni saqlash
             self.wb.save(filename)
             
-            return str(filename)
+            return filename
             
-        except PermissionError:
-            logger.error("❌ Fayl yozish uchun ruxsat yo'q")
-            raise
         except Exception as e:
             logger.error(f"❌ Faylni saqlashda xatolik: {e}")
             raise
@@ -419,7 +427,7 @@ def generate_report(year: int, month: int, workers_data: List[Dict],
         str: Yaratilgan fayl nomi
     """
     try:
-        generator = ExcelReportGenerator(year, month)
+        generator = AdvancedExcelGenerator(year, month)
         filename = generator.generate(workers_data, attendance_data, advances_data)
         return filename
     except Exception as e:
@@ -437,33 +445,25 @@ def generate_report(year: int, month: int, workers_data: List[Dict],
         except:
             return f"Hisobot_{month}_{year}_error.xlsx"
 
-# Qo'shimcha funksiya: Fayl mavjudligini tekshirish
-def check_report_exists(year: int, month: int) -> Optional[str]:
-    """Hisobot fayli mavjudligini tekshirish"""
-    try:
-        filename = f"reports/Hisobot_{year}_{month:02d}.xlsx"
-        if os.path.exists(filename):
-            return filename
-        return None
-    except Exception as e:
-        logger.error(f"❌ Fayl mavjudligini tekshirishda xatolik: {e}")
-        return None
+# Qo'shimcha funksiya: Joriy oy uchun hisobot
+def generate_current_month_report(workers_data: List[Dict], 
+                                attendance_data: Dict, 
+                                advances_data: Dict) -> str:
+    """Joriy oy uchun hisobot yaratish"""
+    now = datetime.now()
+    return generate_report(now.year, now.month, workers_data, attendance_data, advances_data)
 
-# Qo'shimcha funksiya: Eski hisobotlarni o'chirish
-def cleanup_old_reports(days_old: int = 30):
-    """Eski hisobot fayllarini o'chirish"""
-    try:
-        reports_dir = Path("reports")
-        if not reports_dir.exists():
-            return
-        
-        from datetime import datetime, timedelta
-        cutoff_date = datetime.now() - timedelta(days=days_old)
-        
-        for file_path in reports_dir.glob("Hisobot_*.xlsx"):
-            if file_path.stat().st_mtime < cutoff_date.timestamp():
-                file_path.unlink()
-                logger.info(f"✅ Eski fayl o'chirildi: {file_path}")
-                
-    except Exception as e:
-        logger.error(f"❌ Eski fayllarni o'chirishda xatolik: {e}")
+# Qo'shimcha funksiya: Oldingi oy uchun hisobot
+def generate_previous_month_report(workers_data: List[Dict], 
+                                 attendance_data: Dict, 
+                                 advances_data: Dict) -> str:
+    """Oldingi oy uchun hisobot yaratish"""
+    now = datetime.now()
+    if now.month == 1:
+        year = now.year - 1
+        month = 12
+    else:
+        year = now.year
+        month = now.month - 1
+    
+    return generate_report(year, month, workers_data, attendance_data, advances_data)
