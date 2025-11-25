@@ -6,7 +6,7 @@ import calendar
 async def get_db():
     return await asyncpg.connect(os.getenv("DATABASE_URL"))
 
-# --- ADMIN FUNKSIYALARI ---
+# --- ADMIN ---
 async def add_worker(name, rate, code, location):
     conn = await get_db()
     loc = location if location else "Umumiy"
@@ -42,16 +42,19 @@ async def get_workers_for_report(year, month):
     last_day = calendar.monthrange(year, month)[1]
     start_date = date(year, month, 1)
     end_date = date(year, month, last_day)
+    
     rows = await conn.fetch("""
         SELECT id, name, rate, location, created_at, archived_at 
         FROM workers 
-        WHERE created_at <= $2 AND (archived_at IS NULL OR archived_at >= $1)
+        WHERE created_at <= $2 
+          AND (archived_at IS NULL OR archived_at >= $1)
         ORDER BY location, name
     """, start_date, end_date)
+    
     await conn.close()
     return [dict(row) for row in rows]
 
-# --- DAVOMAT VA AVANS ---
+# --- DAVOMAT ---
 async def add_attendance(worker_id, hours, status):
     conn = await get_db()
     today = datetime.now().date()
@@ -67,13 +70,15 @@ async def add_advance_money(worker_id, amount):
 
 async def get_month_attendance(year, month):
     conn = await get_db()
-    rows = await conn.fetch("SELECT worker_id, TO_CHAR(date, 'YYYY-MM-DD') as date_str, hours FROM attendance WHERE TO_CHAR(date, 'YYYY-MM') = $1", f"{year}-{month:02d}")
+    date_filter = f"{year}-{month:02d}"
+    rows = await conn.fetch("SELECT worker_id, TO_CHAR(date, 'YYYY-MM-DD') as date_str, hours FROM attendance WHERE TO_CHAR(date, 'YYYY-MM') = $1", date_filter)
     await conn.close()
     return rows
 
 async def get_month_advances(year, month):
     conn = await get_db()
-    rows = await conn.fetch("SELECT worker_id, SUM(amount) as total FROM advances WHERE TO_CHAR(date, 'YYYY-MM') = $1 GROUP BY worker_id", f"{year}-{month:02d}")
+    date_filter = f"{year}-{month:02d}"
+    rows = await conn.fetch("SELECT worker_id, SUM(amount) as total FROM advances WHERE TO_CHAR(date, 'YYYY-MM') = $1 GROUP BY worker_id", date_filter)
     await conn.close()
     return rows
 

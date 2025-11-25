@@ -9,7 +9,7 @@ async def create_tables():
     try:
         conn = await asyncpg.connect(db_url)
         
-        # Workers
+        # 1. Workers
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS workers(
                 id SERIAL PRIMARY KEY,
@@ -24,14 +24,7 @@ async def create_tables():
             )
         """)
         
-        # Migratsiya (Ehtiyot chorasi)
-        try:
-            await conn.execute("ALTER TABLE workers ADD COLUMN location TEXT")
-            await conn.execute("ALTER TABLE workers ADD COLUMN created_at DATE DEFAULT CURRENT_DATE")
-            await conn.execute("ALTER TABLE workers ADD COLUMN archived_at DATE DEFAULT NULL")
-        except: pass
-
-        # Attendance
+        # 2. Attendance
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS attendance(
                 id SERIAL PRIMARY KEY,
@@ -42,7 +35,7 @@ async def create_tables():
             )
         """)
 
-        # Advances
+        # 3. Advances
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS advances(
                 id SERIAL PRIMARY KEY,
@@ -51,9 +44,19 @@ async def create_tables():
                 amount REAL
             )
         """)
-        
+
+        # --- MAJBURIY MIGRATSIYA ---
+        queries = [
+            "ALTER TABLE workers ADD COLUMN location TEXT",
+            "ALTER TABLE workers ADD COLUMN created_at DATE DEFAULT CURRENT_DATE",
+            "ALTER TABLE workers ADD COLUMN archived_at DATE DEFAULT NULL"
+        ]
+        for q in queries:
+            try: await conn.execute(q)
+            except: pass
+            
         await conn.close()
-        logging.info("✅ Baza tuzilmasi tayyor.")
+        logging.info("✅ Baza tayyor.")
         
     except Exception as e:
-        logging.error(f"❌ Baza xatoligi: {e}")
+        logging.error(f"❌ Baza xatosi: {e}")

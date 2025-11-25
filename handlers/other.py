@@ -8,40 +8,27 @@ from database import requests as db
 import os
 
 router = Router()
-try:
-    ADMIN_ID = int(os.getenv("ADMIN_ID"))
-except:
-    ADMIN_ID = 0
+try: ADMIN_ID = int(os.getenv("ADMIN_ID"))
+except: ADMIN_ID = 0
 
 def to_bold(text):
-    trans = str.maketrans(
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
-        "𝐀𝐁𝐂𝐃𝐄𝐅𝐆𝐇𝐈𝐉𝐊𝐋𝐌𝐍𝐎𝐏𝐐𝐑𝐒𝐓𝐔𝐕𝐖𝐗𝐘𝐙𝐚𝐛𝐜𝐝𝐞𝐟𝐠𝐡𝐢𝐣𝐤𝐥𝐦𝐧𝐨𝐩𝐪𝐫𝐬𝐭𝐮𝐯𝐰𝐱𝐲𝐳"
-    )
+    trans = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "𝐀𝐁𝐂𝐃𝐄𝐅𝐆𝐇𝐈𝐉𝐊𝐋𝐌𝐍𝐎𝐏𝐐𝐑𝐒𝐓𝐔𝐕𝐖𝐗𝐘𝐙𝐚𝐛𝐜𝐝𝐞𝐟𝐠𝐡𝐢𝐣𝐤𝐥𝐦𝐧𝐨𝐩𝐪𝐫𝐬𝐭𝐮𝐯𝐰𝐱𝐲𝐳")
     return text.translate(trans)
 
 @router.message(Command("start"))
-async def cmd_start(message: Message, state: FSMContext):
-    if message.from_user.id == ADMIN_ID:
-        header = to_bold("XO'JAYIN PANELI")
-        await message.answer(f"👋 <b>Xush kelibsiz!</b>\n\n👑 {header}", reply_markup=admin_main)
+async def start(m: Message, s: FSMContext):
+    if m.from_user.id == ADMIN_ID:
+        head = to_bold("XO'JAYIN PANELI")
+        await m.answer(f"👑 {head}\nXush kelibsiz!", reply_markup=admin_main)
     else:
-        header = to_bold("TIZIMGA KIRISH")
-        msg = (
-            f"🔐 {header}\n"
-            "➖➖➖➖➖➖➖➖➖➖\n\n"
-            "🆔 Iltimos, <b>ID KOD</b>ingizni kiriting:"
-        )
-        await message.answer(msg)
-        await state.set_state(WorkerLogin.waiting_code)
+        await m.answer("🆔 <b>ID KODni yozing:</b>")
+        await s.set_state(WorkerLogin.waiting_code)
 
 @router.message(WorkerLogin.waiting_code)
-async def process_login(message: Message, state: FSMContext):
-    if not message.text.isdigit(): return
-    success, msg = await db.verify_login(message.text, message.from_user.id)
-    if success:
-        header = to_bold("MUVAFFAQIYATLI")
-        await message.answer(f"✅ {header}\n\nXush kelibsiz, <b>{msg}</b>!", reply_markup=worker_main)
-        await state.clear()
-    else:
-        await message.answer(f"🚫 <b>{msg}</b>")
+async def login(m: Message, s: FSMContext):
+    if not m.text.isdigit(): return
+    suc, msg = await db.verify_login(m.text, m.from_user.id)
+    if suc:
+        head = to_bold("MUVAFFAQIYATLI")
+        await m.answer(f"✅ {head}\nSalom, <b>{msg}</b>!", reply_markup=worker_main); await s.clear()
+    else: await m.answer(msg)
