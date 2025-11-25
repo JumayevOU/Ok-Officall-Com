@@ -8,21 +8,18 @@ router = Router()
 @router.message(F.text == "💰 Mening hisobim")
 async def my_stats(message: Message):
     stats = await db.get_worker_stats(message.from_user.id)
-    
     if not stats:
-        await message.answer("Sizning ma'lumotlaringiz topilmadi.")
+        await message.answer("Ma'lumot topilmadi. Balki hali hisobot kiritilmagandir.")
         return
-        
+    
     salary = stats['hours'] * stats['rate']
     final = salary - stats['advance']
     
     text = (
         f"👤 **{stats['name']}**\n"
-        f"📅 Shu oy uchun hisob:\n\n"
         f"⏳ Ishlangan vaqt: {stats['hours']} soat\n"
         f"💸 Avanslar: {stats['advance']:,.0f} so'm\n"
-        f"💵 Jami hisoblangan: {salary:,.0f} so'm\n"
-        f"➖➖➖➖➖➖➖➖\n"
+        f"💵 Jami hisob: {salary:,.0f} so'm\n"
         f"💰 **Qo'lga tegadi: {final:,.0f} so'm**"
     )
     await message.answer(text, reply_markup=worker_main)
