@@ -1,59 +1,41 @@
-from aiogram import Router, F
+from aiogram import Router
 from aiogram.types import Message
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from utils.keyboards import admin_main, worker_main
+from utils.states import WorkerLogin
 from database import requests as db
-from utils.keyboards import worker_main, start_kb
 import os
 
 router = Router()
+try:
+    ADMIN_ID = int(os.getenv("ADMIN_ID"))
+except:
+    ADMIN_ID = 0
 
 @router.message(Command("start"))
-async def start_command(message: Message):
+async def cmd_start(message: Message, state: FSMContext):
     user_id = message.from_user.id
-    
-    try:
-        ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-        if user_id == ADMIN_ID:
-            from utils.keyboards import admin_main
-            await message.answer(
-                "🏢 Admin Panelga xush kelibsiz!",
-                reply_markup=admin_main
-            )
-            return
-    except:
-        pass
-    
-    worker_stats = await db.get_worker_stats(user_id)
-    if worker_stats:
-        await message.answer(
-            f"👷‍♂️ Ishchi paneliga xush kelibsiz!\n\n👤 {worker_stats['name']}",
-            reply_markup=worker_main
-        )
+    if user_id == ADMIN_ID:
+        await message.answer(f"👋 **Xush kelibsiz, Xo'jayin!**\nBoshqaruv paneliga marhamat.", reply_markup=admin_main)
     else:
+        # Agar user oldin kirgan bo'lsa, uni avtomatik taniy olamiz (bazada telegram_id bor bo'lsa)
+        # Hozircha oddiy login:
         await message.answer(
-            "👷‍♂️ Ishchi hisob qaydnomasi\n\nTizimga kirish uchun 3 xonali kirish kodini yuboring:",
-            reply_markup=start_kb
+            "🔐 **Tizimga kirish**\n\n"
+            "Iltimos, Admindan olgan **ID KOD**ingizni yozing:"
         )
+        await state.set_state(WorkerLogin.waiting_code)
 
-@router.message(F.text == "🔑 Kirish kodi")
-async def request_login_code(message: Message):
-    await message.answer(
-        "🔐 Tizimga kirish\n\nIltimos, 3 xonali kirish kodini yuboring:"
-    )
-
-@router.message(F.text.regexp(r'^\d{3}$'))
-async def process_login_code(message: Message):
-    code = int(message.text)
-    telegram_id = message.from_user.id
+@router.message(WorkerLogin.waiting_code)
+async def process_login(message: Message, state: FSMContext):
+    if not message.text.isdigit():
+        await message.answer("⚠️ Faqat raqam yozing!")
+        return
     
-    success, result = await db.verify_login(code, telegram_id)
-    
+    success, msg = await db.verify_login(message.text, message.from_user.id)
     if success:
-        worker_stats = await db.get_worker_stats(telegram_id)
-        if worker_stats:
-            await message.answer(
-                f"✅ Xush kelibsiz, {result}!",
-                reply_markup=worker_main
-            )
+        await message.answer(f"✅ Xush kelibsiz, **{msg}**!", reply_markup=worker_main)
+        await state.clear()
     else:
-        await message.answer(f"❌ {result}")
+        await message.answer(f"{msg}\nQaytadan urinib ko'ring:")

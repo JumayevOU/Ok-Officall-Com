@@ -6,29 +6,29 @@ from aiogram import Bot, Dispatcher
 from database.models import create_tables
 from handlers import admin, worker, other
 
-from dotenv import load_dotenv
 load_dotenv()
-
 
 async def main():
     logging.basicConfig(level=logging.INFO)
-    print("Bot ishga tushmoqda...")
+    print("🚀 Bot ishga tushirilmoqda...")
     
+    # 1. Baza jadvallarini tekshirish
     await create_tables()
 
     token = os.getenv("BOT_TOKEN")
     if not token:
-        print("❌ BOT_TOKEN topilmadi!")
+        print("❌ XATOLIK: .env faylida BOT_TOKEN yo'q!")
         return
 
     bot = Bot(token=token)
     dp = Dispatcher()
     
+    # 2. Routerlarni ulash
     dp.include_router(admin.router)
     dp.include_router(worker.router)
     dp.include_router(other.router)
 
-    print("🚀 Bot ishga tushdi!")
+    print("✅ Bot muvaffaqiyatli ishga tushdi!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
