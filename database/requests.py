@@ -6,7 +6,7 @@ import calendar
 async def get_db():
     return await asyncpg.connect(os.getenv("DATABASE_URL"))
 
-# --- ADMIN ---
+# --- ADMIN: ISHCHILAR ---
 async def add_worker(name, rate, code, location):
     conn = await get_db()
     loc = location if location else "Umumiy"
@@ -36,6 +36,23 @@ async def get_active_workers():
     """)
     await conn.close()
     return [dict(row) for row in rows]
+
+# --- YANGI: ISM ORQALI QIDIRISH ---
+async def search_worker_by_name(text):
+    conn = await get_db()
+    # ILIKE - katta kichik harfga qaramay qidiradi
+    rows = await conn.fetch("""
+        SELECT id, name, location FROM workers 
+        WHERE active=TRUE AND name ILIKE $1
+    """, f"%{text}%")
+    await conn.close()
+    return [dict(row) for row in rows]
+
+async def get_worker_tg_id(worker_id):
+    conn = await get_db()
+    val = await conn.fetchval("SELECT telegram_id FROM workers WHERE id=$1", int(worker_id))
+    await conn.close()
+    return val
 
 async def get_workers_for_report(year, month):
     conn = await get_db()

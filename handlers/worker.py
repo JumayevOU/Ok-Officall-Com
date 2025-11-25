@@ -18,34 +18,52 @@ def to_bold(text):
 @router.message(F.text == "💰 Mening hisobim")
 async def my_stats(message: Message):
     stats = await db.get_worker_stats(message.from_user.id)
-    if not stats: await message.answer("⚠️ Ma'lumot yo'q"); return
+    if not stats: await message.answer("⚠️ <i>Hozircha ma'lumot yo'q.</i>"); return
     
     sal = stats['hours'] * stats['rate']; fin = sal - stats['advance']
     head = to_bold("SHAXSIY HISOB")
     text = (
-        f"🧾 {head}\n🗓 <i>{datetime.now().strftime('%B %Y')}</i>\n➖➖➖➖➖➖➖➖➖➖\n"
-        f"👤 <b>{stats['name']}</b>\n⏱ {stats['hours']} soat | 💸 -{stats['advance']:,.0f}\n"
-        f"💰 <b>Qo'lga: {fin:,.0f} so'm</b>"
+        f"🧾 {head}\n🗓 <i>{datetime.now().strftime('%B %Y')}</i>\n➖➖➖➖➖➖➖➖➖➖\n\n"
+        f"👤 <b>{stats['name']}</b>\n"
+        f"💎 Tarif: <code>{stats['rate']:,} so'm/soat</code>\n\n"
+        f"⏱ Ishlangan vaqt: <b>{stats['hours']} soat</b>\n"
+        f"💵 Hisoblangan: <b>{sal:,.0f} so'm</b>\n"
+        f"💸 Avanslar: <b>-{stats['advance']:,.0f} so'm</b>\n"
+        "➖➖➖➖➖➖➖➖➖➖\n"
+        f"💰 𝐐𝐎'𝐋𝐆𝐀 𝐓𝐄𝐆𝐀𝐃𝐈:\n"
+        f"👉 <b>{fin:,.0f} SO'M</b>"
     )
     await message.answer(text, reply_markup=worker_main)
 
 @router.message(F.text == "💸 Avans so'rash")
-async def req_s(m: Message, s: FSMContext):
-    await s.set_state(RequestAdvance.amount); await m.answer("💸 <b>Summa:</b>", reply_markup=cancel_kb)
+async def req_adv_start(message: Message, state: FSMContext):
+    await state.set_state(RequestAdvance.amount)
+    header = to_bold("AVANS SO'RASH")
+    await message.answer(f"💸 {header}\n\n<b>Qancha summa kerak?</b>\n<i>(Faqat raqam yozing, masalan: 500000)</i>", reply_markup=cancel_kb)
 
 @router.message(RequestAdvance.amount)
-async def req_d(m: Message, s: FSMContext):
-    if m.text=="Bekor qilish": await s.clear(); await m.answer("Bekor", reply_markup=worker_main); return
+async def req_adv_send(message: Message, state: FSMContext):
+    if message.text == "Bekor qilish": await state.clear(); await message.answer("Bekor", reply_markup=worker_main); return
     try:
-        amt = float(m.text)
+        amount = float(message.text)
         conn = await db.get_db()
-        row = await conn.fetchrow("SELECT id, name FROM workers WHERE telegram_id=$1", m.from_user.id)
+        w_row = await conn.fetchrow("SELECT id, name FROM workers WHERE telegram_id=$1", message.from_user.id)
         await conn.close()
-        if row:
-            head = to_bold("AVANS SO'ROVI")
-            txt = f"🔔 {head}\n👤 {row['name']}\n💰 {amt:,.0f}"
-            await m.bot.send_message(ADMIN_ID, txt, reply_markup=approval_kb(row['id'], amt))
-            await m.answer("✅ <b>Yuborildi!</b>", reply_markup=worker_main)
-        else: await m.answer("Xato")
-        await s.clear()
-    except: await m.answer("Raqam yozing")
+        
+        if w_row:
+            head = to_bold("YANGI AVANS SO'ROVI")
+            msg = (
+                f"🔔 {head}\n\n"
+                f"👤 Xodim: <b>{w_row['name']}</b>\n"
+                f"💰 So'ralgan summa: <b>{amount:,.0f} so'm</b>\n\n"
+                "<i>Tasdiqlaysizmi?</i>"
+            )
+            # Adminga yuborish
+            # Callback data ga ID ni qo'shamiz (rej_adv_{id})
+            await message.bot.send_message(ADMIN_ID, msg, reply_markup=approval_kb(w_row['id'], amount))
+            await message.answer("✅ <b>So'rovingiz Adminga yuborildi!</b>\n<i>Javobni kuting...</i>", reply_markup=worker_main)
+        else:
+            await message.answer("⚠️ <i>Sizning profilingiz topilmadi.</i>")
+        await state.clear()
+    except:
+        await message.answer("⚠️ <i>Iltimos, faqat raqam yozing!</i>")
