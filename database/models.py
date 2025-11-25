@@ -37,5 +37,16 @@ async def create_tables():
             amount REAL
         )
     """)
-    
+    # ... eski kodlar ...
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS workers(
+            id SERIAL PRIMARY KEY,
+            name TEXT,
+            rate REAL,
+            code INTEGER UNIQUE, 
+            telegram_id BIGINT,
+            location TEXT,  -- <--- YANGI USTUN (Masalan: 'H Blok')
+            active BOOLEAN DEFAULT TRUE
+        )
+""")
     await conn.close()
