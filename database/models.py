@@ -3,16 +3,13 @@ import os
 import logging
 
 async def create_tables():
-    """Baza jadvallarini yaratadi va kerak bo'lsa yangi ustunlarni qo'shadi."""
     db_url = os.getenv("DATABASE_URL")
-    if not db_url:
-        logging.error("❌ DATABASE_URL topilmadi!")
-        return
+    if not db_url: return
 
     try:
         conn = await asyncpg.connect(db_url)
         
-        # 1. Ishchilar jadvali
+        # Workers
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS workers(
                 id SERIAL PRIMARY KEY,
@@ -21,21 +18,20 @@ async def create_tables():
                 code INTEGER UNIQUE, 
                 telegram_id BIGINT,
                 location TEXT,
-                active BOOLEAN DEFAULT TRUE
+                active BOOLEAN DEFAULT TRUE,
+                created_at DATE DEFAULT CURRENT_DATE,
+                archived_at DATE DEFAULT NULL
             )
         """)
-
-        # --- MIGRATSIYA (Eski bazada location yo'q bo'lsa qo'shadi) ---
+        
+        # Migratsiya (Ehtiyot chorasi)
         try:
             await conn.execute("ALTER TABLE workers ADD COLUMN location TEXT")
-            logging.info("✅ 'location' ustuni muvaffaqiyatli qo'shildi.")
-        except asyncpg.exceptions.DuplicateColumnError:
-            pass 
-        except Exception as e:
-            logging.warning(f"⚠️ Migratsiya xabari: {e}")
-        # --------------------------------------------------------------
+            await conn.execute("ALTER TABLE workers ADD COLUMN created_at DATE DEFAULT CURRENT_DATE")
+            await conn.execute("ALTER TABLE workers ADD COLUMN archived_at DATE DEFAULT NULL")
+        except: pass
 
-        # 2. Davomat
+        # Attendance
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS attendance(
                 id SERIAL PRIMARY KEY,
@@ -46,7 +42,7 @@ async def create_tables():
             )
         """)
 
-        # 3. Avanslar
+        # Advances
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS advances(
                 id SERIAL PRIMARY KEY,
@@ -57,7 +53,7 @@ async def create_tables():
         """)
         
         await conn.close()
-        logging.info("✅ Baza 100% tayyor.")
+        logging.info("✅ Baza tuzilmasi tayyor.")
         
     except Exception as e:
-        logging.error(f"❌ Bazaga ulanishda xatolik: {e}")
+        logging.error(f"❌ Baza xatoligi: {e}")

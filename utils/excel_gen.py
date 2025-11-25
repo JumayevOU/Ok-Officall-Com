@@ -1,59 +1,49 @@
 import calendar
-from datetime import datetime
+from datetime import datetime, date
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
-# Dizayn Ranglari
-YELLOW_FILL = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
-RED_FILL = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")
-HEADER_FONT = Font(bold=True, name='Arial', size=11)
-BOLD_FONT = Font(bold=True, name='Arial', size=10)
-ROTATE_TEXT = Alignment(text_rotation=90, horizontal="center", vertical="center")
-CENTER = Alignment(horizontal="center", vertical="center")
-BORDER = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+HEADER_FILL = PatternFill(start_color="FFD966", end_color="FFD966", fill_type="solid")
+BLOCK_FILL = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+ABSENT_FILL = PatternFill(start_color="F4CCCC", end_color="F4CCCC", fill_type="solid")
+TITLE_FONT = Font(bold=True, name='Calibri', size=11)
+DATA_FONT = Font(name='Calibri', size=11)
+BOLD_DATA_FONT = Font(bold=True, name='Calibri', size=11)
+CENTER_ALIGN = Alignment(horizontal="center", vertical="center", wrap_text=True)
+LEFT_ALIGN = Alignment(horizontal="left", vertical="center")
+ALL_BORDER = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
 
 def generate_report(year, month, workers_data, attendance_data, advances_data):
     wb = Workbook()
     ws = wb.active
-    ws.title = "Davomat"
-
+    ws.title = f"{month}-{year}"
     num_days = calendar.monthrange(year, month)[1]
     
-    # 1. SHAPKA QISMI
-    ws.column_dimensions['A'].width = 30
+    ws.column_dimensions['A'].width = 40 
     ws['A1'] = "F.I.O"
-    ws['A1'].font = HEADER_FONT
-    ws['A1'].fill = YELLOW_FILL
-    ws['A1'].alignment = CENTER
-    ws['A1'].border = BORDER
+    ws['A1'].font = TITLE_FONT
+    ws['A1'].fill = HEADER_FILL
+    ws['A1'].alignment = CENTER_ALIGN
+    ws['A1'].border = ALL_BORDER
 
-    # Sanalar (1..31)
     for day in range(1, num_days + 1):
         col_idx = day + 1
         col_letter = get_column_letter(col_idx)
-        date_str = f"{day:02d}.{month:02d}.{year}"
-        
-        cell = ws.cell(row=1, column=col_idx, value=date_str)
-        cell.alignment = ROTATE_TEXT
-        cell.font = BOLD_FONT
-        cell.border = BORDER
-        ws.column_dimensions[col_letter].width = 4
+        ws.cell(row=1, column=col_idx, value=f"{day:02d}.{month:02d}").font = Font(bold=True, size=9)
+        ws.cell(row=1, column=col_idx).fill = HEADER_FILL
+        ws.cell(row=1, column=col_idx).border = ALL_BORDER
+        ws.cell(row=1, column=col_idx).alignment = Alignment(horizontal="center", vertical="center")
+        ws.column_dimensions[col_letter].width = 6
 
-    # Yakuniy hisob ustunlari
     start_calc_col = num_days + 2
     headers = ["Soatlik Narx", "Jami Soat", "Avans", "Hisoblangan", "Qo'lga Tegadi"]
-    
     for i, header in enumerate(headers):
-        col_idx = start_calc_col + i
-        cell = ws.cell(row=1, column=col_idx, value=header)
-        cell.font = HEADER_FONT
-        cell.alignment = ROTATE_TEXT
-        cell.fill = YELLOW_FILL
-        cell.border = BORDER
-        ws.column_dimensions[get_column_letter(col_idx)].width = 13
+        col = start_calc_col + i
+        c = ws.cell(row=1, column=col, value=header)
+        c.font = TITLE_FONT; c.fill = HEADER_FILL; c.alignment = CENTER_ALIGN; c.border = ALL_BORDER
+        ws.column_dimensions[get_column_letter(col)].width = 14
 
-    # 2. GURUHLASH (A Blok, H Blok...)
     grouped_workers = {}
     for w in workers_data:
         loc = w.get('location', 'Boshqa') or 'Boshqa'
@@ -61,60 +51,47 @@ def generate_report(year, month, workers_data, attendance_data, advances_data):
         grouped_workers[loc].append(w)
 
     current_row = 2
-    
-    # Ma'lumotlarni chizish
     for location, workers in grouped_workers.items():
-        # --- BLOK NOMI ---
         ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=start_calc_col + 4)
-        block_cell = ws.cell(row=current_row, column=1, value=f"{location.upper()}")
-        block_cell.font = Font(bold=True, size=12)
-        block_cell.alignment = CENTER
-        block_cell.fill = YELLOW_FILL
-        block_cell.border = BORDER
-        
-        # Border chizib chiqish (Merge qilingan joyga)
-        for col in range(1, start_calc_col + 5):
-            ws.cell(row=current_row, column=col).border = BORDER
+        bc = ws.cell(row=current_row, column=1, value=f"🏢 {location.upper()}")
+        bc.font = Font(bold=True, size=12); bc.fill = BLOCK_FILL; bc.alignment = Alignment(horizontal="center"); bc.border = ALL_BORDER
+        for col in range(1, start_calc_col + 5): ws.cell(row=current_row, column=col).border = ALL_BORDER
         current_row += 1
 
-        # --- ISHCHILAR ---
         for worker in workers:
-            ws.cell(row=current_row, column=1, value=worker['name']).border = BORDER
+            nc = ws.cell(row=current_row, column=1, value=worker['name'])
+            nc.font = DATA_FONT; nc.alignment = LEFT_ALIGN; nc.border = ALL_BORDER
+            
             total_hours = 0
-            
-            # Davomat kunlari
+            created_at, archived_at = worker['created_at'], worker['archived_at']
             for day in range(1, num_days + 1):
-                col_idx = day + 1
+                col = day + 1
+                curr_date = date(year, month, day)
                 date_key = f"{year}-{month:02d}-{day:02d}"
-                hours = attendance_data.get((worker['id'], date_key), None)
-                cell = ws.cell(row=current_row, column=col_idx)
-                cell.border = BORDER
-                cell.alignment = CENTER
+                cell = ws.cell(row=current_row, column=col)
+                cell.border = ALL_BORDER; cell.alignment = Alignment(horizontal="center"); cell.font = DATA_FONT
                 
-                if hours is not None:
-                    if hours == 0:
-                        cell.fill = RED_FILL # Qizil
-                        cell.value = ""
-                    else:
-                        cell.value = hours
-                        total_hours += hours
-                
-            # Hisob-kitoblar
-            ws.cell(row=current_row, column=start_calc_col, value=worker['rate']).border = BORDER
-            ws.cell(row=current_row, column=start_calc_col+1, value=total_hours).border = BORDER
-            
+                if (curr_date < created_at) or (archived_at and curr_date > archived_at):
+                    cell.fill = ABSENT_FILL; cell.value = "✖️"
+                else:
+                    hours = attendance_data.get((worker['id'], date_key), None)
+                    if hours is not None:
+                        if hours == 0: cell.fill = ABSENT_FILL; cell.value = ""
+                        else: cell.value = hours; total_hours += hours
+
+            ws.cell(row=current_row, column=start_calc_col, value=worker['rate']).border = ALL_BORDER
+            c = ws.cell(row=current_row, column=start_calc_col+1, value=total_hours)
+            c.border = ALL_BORDER; c.font = BOLD_DATA_FONT
             adv = advances_data.get(worker['id'], 0)
-            ws.cell(row=current_row, column=start_calc_col+2, value=adv).border = BORDER
-            
+            ws.cell(row=current_row, column=start_calc_col+2, value=adv).border = ALL_BORDER
             gross = total_hours * worker['rate']
-            ws.cell(row=current_row, column=start_calc_col+3, value=gross).border = BORDER
-            
+            ws.cell(row=current_row, column=start_calc_col+3, value=gross).border = ALL_BORDER
             net = gross - adv
-            ws.cell(row=current_row, column=start_calc_col+4, value=net).border = BORDER
-            ws.cell(row=current_row, column=start_calc_col+4).font = BOLD_FONT
-
+            cn = ws.cell(row=current_row, column=start_calc_col+4, value=net)
+            cn.border = ALL_BORDER; cn.font = BOLD_DATA_FONT; cn.fill = PatternFill(start_color="E2EFDA", fill_type="solid")
+            
             current_row += 1
-
+            
     filename = f"Hisobot_{month}_{year}.xlsx"
     wb.save(filename)
     return filename

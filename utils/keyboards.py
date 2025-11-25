@@ -1,5 +1,6 @@
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
+# Asosiy Admin Menyusi
 admin_main = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="📝 Bugungi hisobot"), KeyboardButton(text="📊 Joriy holat")],
@@ -8,12 +9,44 @@ admin_main = ReplyKeyboardMarkup(
     ], resize_keyboard=True
 )
 
+# Bekor qilish (Reply)
 cancel_kb = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="Bekor qilish")]], 
     resize_keyboard=True
 )
 
+# --- YANGI: SOZLAMALAR UCHUN INLINE ---
+settings_kb = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Yangi xodim qo'shish", callback_data="set_add")],
+        [InlineKeyboardButton(text="✏️ Tahrirlash", callback_data="set_edit"), InlineKeyboardButton(text="🗑 O'chirish", callback_data="set_del")]
+    ]
+)
+
+# Tahrirlash turlari
+edit_options = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="👤 Ismni o'zgartirish", callback_data="edit_name")],
+        [InlineKeyboardButton(text="💵 Narxni o'zgartirish", callback_data="edit_rate")],
+        [InlineKeyboardButton(text="📍 Blokni o'zgartirish", callback_data="edit_loc")],
+    ]
+)
+
+# Avansni tasdiqlash
+def approval_kb(worker_id, amount):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Berilsin", callback_data=f"app_adv_{worker_id}_{amount}"),
+                InlineKeyboardButton(text="🚫 Rad etilsin", callback_data=f"rej_adv_{worker_id}")
+            ]
+        ]
+    )
+
+# Ishchi menyusi
 worker_main = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text="💰 Mening hisobim")]], 
-    resize_keyboard=True
+    keyboard=[
+        [KeyboardButton(text="💰 Mening hisobim")],
+        [KeyboardButton(text="💸 Avans so'rash")]
+    ], resize_keyboard=True
 )
