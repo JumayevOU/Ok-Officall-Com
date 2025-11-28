@@ -25,3 +25,6 @@ class RequestAdvance(StatesGroup):
 
 class WorkerLogin(StatesGroup):
     waiting_code = State()
+
+class SetLocation(StatesGroup):
+    waiting_loc = State()
