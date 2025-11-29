@@ -1,7 +1,7 @@
 import math
 
 def calculate_distance(lat1, lon1, lat2, lon2):
-    R = 6371000 # Yer radiusi (metrda)
+    R = 6371000
     phi1 = math.radians(lat1)
     phi2 = math.radians(lat2)
     delta_phi = math.radians(lat2 - lat1)

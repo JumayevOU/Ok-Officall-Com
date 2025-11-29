@@ -16,7 +16,13 @@ def to_bold(text):
     trans = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "𝐀𝐁𝐂𝐃𝐄𝐅𝐆𝐇𝐈𝐉𝐊𝐋𝐌𝐍𝐎𝐏𝐐𝐑𝐒𝐓𝐔𝐕𝐖𝐗𝐘𝐙𝐚𝐛𝐜𝐝𝐞𝐟𝐠𝐡𝐢𝐣𝐤𝐥𝐦𝐧𝐨𝐩𝐪𝐫𝐬𝐭𝐮𝐯𝐰𝐱𝐲𝐳")
     return text.translate(trans)
 
-# LIVE LOCATION CHECK
+# --- GLOBAL CANCEL ---
+@router.message(F.text == "Bekor qilish")
+async def worker_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ <b>Bekor qilindi.</b>", reply_markup=worker_main)
+
+# --- CHECK IN ---
 @router.message(F.text == "🏢 Keldim")
 async def check_in_start(message: Message, state: FSMContext):
     conn = await db.get_db()
@@ -25,10 +31,10 @@ async def check_in_start(message: Message, state: FSMContext):
     if not row: return
     
     if await db.is_checked_in(row['id']):
-        await message.answer("⚠️ <b>Siz allaqachon ishdasiz!</b>", reply_markup=worker_main); return
+        await message.answer("⚠️ <b>Siz allaqachon ishdasiz!</b>"); return
 
     await state.set_state("check_in_loc")
-    await message.answer("🛡 <b>Iltimos, JONLI LOKATSIYA (Live Location) yuboring.</b>\n<i>Oddiy lokatsiya qabul qilinmaydi.</i>", reply_markup=cancel_kb)
+    await message.answer("🛡 <b>Iltimos, JONLI LOKATSIYA (Live Location) yuboring.</b>", reply_markup=cancel_kb)
 
 @router.message(F.location, F.state == "check_in_loc") 
 async def check_in_verify(message: Message, state: FSMContext):
@@ -49,6 +55,7 @@ async def check_in_verify(message: Message, state: FSMContext):
     else:
         await message.answer(f"🚫 <b>Uzoqdasiz: {int(dist)}m</b>\n<i>Yaqinroq keling.</i>")
 
+# --- CHECK OUT ---
 @router.message(F.text == "🏠 Ketdim")
 async def check_out_start(message: Message, state: FSMContext):
     await state.set_state("check_out_loc")
@@ -71,7 +78,7 @@ async def check_out_verify(message: Message, state: FSMContext):
         await state.clear()
     else: await message.answer(f"🚫 <b>Uzoqdasiz: {int(dist)}m</b>")
 
-# STATS & ADVANCE
+# --- STATS & AVANS ---
 @router.message(F.text == "💰 Mening hisobim")
 async def my_stats(message: Message):
     stats = await db.get_worker_stats(message.from_user.id)
@@ -87,7 +94,6 @@ async def req_s(message: Message, state: FSMContext):
 
 @router.message(RequestAdvance.amount)
 async def req_d(message: Message, state: FSMContext):
-    if message.text == "Bekor qilish": await state.clear(); await message.answer("Bekor", reply_markup=worker_main); return
     try:
         amt = float(message.text)
         conn = await db.get_db(); row = await conn.fetchrow("SELECT id, name FROM workers WHERE telegram_id=$1", message.from_user.id); await conn.close()

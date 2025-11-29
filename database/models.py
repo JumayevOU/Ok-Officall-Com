@@ -9,7 +9,7 @@ async def create_tables():
     try:
         conn = await asyncpg.connect(db_url)
         
-        # 1. WORKERS (Ishchilar)
+        # Jadvallarni yaratish
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS workers(
                 id SERIAL PRIMARY KEY,
@@ -21,19 +21,8 @@ async def create_tables():
                 active BOOLEAN DEFAULT TRUE,
                 created_at DATE DEFAULT CURRENT_DATE,
                 archived_at DATE DEFAULT NULL
-            )
-        """)
-        
-        # 2. SETTINGS (Lokatsiya)
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS settings(
-                key TEXT PRIMARY KEY,
-                value TEXT
-            )
-        """)
-
-        # 3. ATTENDANCE (Davomat - vaqtlar bilan)
-        await conn.execute("""
+            );
+            CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
             CREATE TABLE IF NOT EXISTS attendance(
                 id SERIAL PRIMARY KEY,
                 worker_id INTEGER REFERENCES workers(id),
@@ -42,33 +31,31 @@ async def create_tables():
                 end_time TIMESTAMP,
                 hours REAL,
                 status TEXT
-            )
-        """)
-
-        # 4. ADVANCES (Avans)
-        await conn.execute("""
+            );
             CREATE TABLE IF NOT EXISTS advances(
                 id SERIAL PRIMARY KEY,
                 worker_id INTEGER REFERENCES workers(id),
                 date DATE,
                 amount REAL
-            )
+            );
         """)
 
-        # --- MIGRATSIYA (Ustunlar borligini tekshirish) ---
-        queries = [
+        # Migratsiya (Ustunlar bor-yo'qligini tekshirib, xatosiz qo'shish)
+        alter_queries = [
             "ALTER TABLE workers ADD COLUMN location TEXT",
             "ALTER TABLE workers ADD COLUMN created_at DATE DEFAULT CURRENT_DATE",
             "ALTER TABLE workers ADD COLUMN archived_at DATE DEFAULT NULL",
             "ALTER TABLE attendance ADD COLUMN start_time TIMESTAMP",
             "ALTER TABLE attendance ADD COLUMN end_time TIMESTAMP"
         ]
-        for q in queries:
+        
+        for q in alter_queries:
             try: await conn.execute(q)
-            except: pass
+            except asyncpg.exceptions.DuplicateColumnError: pass
+            except Exception as e: logging.warning(f"Migratsiya ogohlantirishi: {e}")
             
         await conn.close()
-        logging.info("✅ Baza to'liq tayyor.")
+        logging.info("✅ Baza tizimi to'liq yuklandi.")
         
     except Exception as e:
-        logging.error(f"❌ Baza xatoligi: {e}")
+        logging.critical(f"❌ BAZA XATOSI: {e}")

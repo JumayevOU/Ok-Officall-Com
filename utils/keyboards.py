@@ -1,5 +1,6 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
+# ADMIN
 admin_main = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="📝 Bugungi hisobot"), KeyboardButton(text="📊 Joriy holat")],
@@ -33,6 +34,7 @@ def approval_kb(worker_id, amount):
         ]
     )
 
+# WORKER
 worker_main = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="🏢 Keldim"), KeyboardButton(text="🏠 Ketdim")],
@@ -41,8 +43,5 @@ worker_main = ReplyKeyboardMarkup(
 )
 
 location_kb = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="📍 Lokatsiya yuborish", request_location=True)],
-        [KeyboardButton(text="Bekor qilish")]
-    ], resize_keyboard=True
+    keyboard=[[KeyboardButton(text="Bekor qilish")]], resize_keyboard=True # Lokatsiya menyu ichidan olinadi (xavfsizroq)
 )

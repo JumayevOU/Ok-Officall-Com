@@ -18,13 +18,19 @@ def to_bold(text):
     trans = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "𝐀𝐁𝐂𝐃𝐄𝐅𝐆𝐇𝐈𝐉𝐊𝐋𝐌𝐍𝐎𝐏𝐐𝐑𝐒𝐓𝐔𝐕𝐖𝐗𝐘𝐙𝐚𝐛𝐜𝐝𝐞𝐟𝐠𝐡𝐢𝐣𝐤𝐥𝐦𝐧𝐨𝐩𝐪𝐫𝐬𝐭𝐮𝐯𝐰𝐱𝐲𝐳")
     return text.translate(trans)
 
-# SOZLAMALAR
+# --- GLOBAL CANCEL ---
+@router.message(F.text == "Bekor qilish")
+async def global_cancel(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("❌ <b>Bekor qilindi.</b>", reply_markup=admin_main)
+
+# --- SETTINGS MENU ---
 @router.message(F.text == "⚙️ Sozlamalar")
 async def settings_menu(message: Message):
     header = to_bold("BOSHQARUV MARKAZI")
     await message.answer(f"⚙️ {header}\n➖➖➖➖➖➖➖➖➖➖\n<i>Quyidagilardan birini tanlang:</i>", reply_markup=settings_kb)
 
-# ADD WORKER
+# --- ADD WORKER ---
 @router.callback_query(F.data == "set_add")
 async def btn_add(call: CallbackQuery, state: FSMContext):
     await call.message.delete(); await state.set_state(AddWorker.name)
@@ -32,23 +38,21 @@ async def btn_add(call: CallbackQuery, state: FSMContext):
 
 @router.message(AddWorker.name)
 async def add_n(message: Message, state: FSMContext):
-    if message.text == "Bekor qilish": await state.clear(); await message.answer("Bekor", reply_markup=admin_main); return
     await state.update_data(name=message.text); await state.set_state(AddWorker.rate)
     await message.answer("💸 <b>Soatlik ish haqi qancha? (So'mda)</b>", reply_markup=cancel_kb)
 
 @router.message(AddWorker.rate)
 async def add_r(message: Message, state: FSMContext):
     try: await state.update_data(rate=float(message.text)); await state.set_state(AddWorker.location); await message.answer("📍 <b>Xodim qaysi Blokda ishlaydi?</b>", reply_markup=cancel_kb)
-    except: await message.answer("Raqam yozing!")
+    except: await message.answer("⚠️ Raqam yozing!")
 
 @router.message(AddWorker.location)
 async def add_l(message: Message, state: FSMContext):
-    if message.text == "Bekor qilish": await state.clear(); return
     d = await state.get_data(); code = random.randint(100, 999)
     await db.add_worker(d['name'], d['rate'], code, message.text); await state.clear()
     await message.answer(f"✅ <b>Qo'shildi!</b>\n👤 {d['name']}\n🔑 Kod: <code>{code}</code>", reply_markup=admin_main)
 
-# SET LOCATION
+# --- LOCATION ---
 @router.callback_query(F.data == "set_gps")
 async def btn_gps(call: CallbackQuery, state: FSMContext):
     await call.message.delete(); await state.set_state(SetLocation.waiting_loc)
@@ -59,12 +63,7 @@ async def gps_save(message: Message, state: FSMContext):
     await db.set_work_location(message.location.latitude, message.location.longitude); await state.clear()
     await message.answer("✅ <b>Lokatsiya saqlandi!</b>", reply_markup=admin_main)
 
-@router.message(SetLocation.waiting_loc)
-async def gps_err(message: Message, state: FSMContext):
-    if message.text == "Bekor qilish": await state.clear(); await message.answer("Bekor", reply_markup=admin_main); return
-    await message.answer("Lokatsiya yuboring!")
-
-# EDIT & DELETE
+# --- EDIT WORKER ---
 @router.callback_query(F.data == "set_edit")
 async def btn_edit(call: CallbackQuery, state: FSMContext):
     await call.message.delete(); await state.set_state(EditWorker.waiting_id)
@@ -72,7 +71,6 @@ async def btn_edit(call: CallbackQuery, state: FSMContext):
 
 @router.message(EditWorker.waiting_id)
 async def edit_id(message: Message, state: FSMContext):
-    if message.text == "Bekor qilish": await state.clear(); await message.answer("Bekor", reply_markup=admin_main); return
     if not message.text.isdigit(): await message.answer("ID kerak"); return
     await state.update_data(wid=int(message.text)); await state.set_state(EditWorker.waiting_field)
     await message.answer("Nimani o'zgartiramiz?", reply_markup=edit_options)
@@ -92,6 +90,7 @@ async def edit_v(message: Message, state: FSMContext):
     await db.update_worker_field(d['wid'], d['field'], val); await state.clear()
     await message.answer("✅ <b>O'zgardi!</b>", reply_markup=admin_main)
 
+# --- DELETE WORKER ---
 @router.callback_query(F.data == "set_del")
 async def btn_del(call: CallbackQuery, state: FSMContext):
     await call.message.delete(); await state.set_state(DeleteWorker.waiting_id)
@@ -99,22 +98,11 @@ async def btn_del(call: CallbackQuery, state: FSMContext):
 
 @router.message(DeleteWorker.waiting_id)
 async def del_confirm(message: Message, state: FSMContext):
-    if message.text == "Bekor qilish": await state.clear(); await message.answer("Bekor", reply_markup=admin_main); return
     if not message.text.isdigit(): await message.answer("ID kerak"); return
     await db.archive_worker_date(int(message.text)); await state.clear()
     await message.answer("✅ <b>Arxivlandi!</b>", reply_markup=admin_main)
 
-# LIST & REPORT
-@router.message(F.text == "👥 Ishchilar")
-async def show_list(message: Message):
-    workers = await db.get_active_workers()
-    head = to_bold("ISHCHILAR")
-    text = f"📋 {head}\n➖➖➖➖➖➖➖➖➖➖\n"
-    if not workers: text+="Bo'sh"
-    else:
-        for w in workers: text += f"🆔 <code>{w['id']}</code> | <b>{w['name']}</b>\n📍 {w.get('location','-')} | 💵 {w['rate']:,}\n───────────────\n"
-    await message.answer(text)
-
+# --- REPORT (DAVOMAT) ---
 @router.message(F.text == "📝 Bugungi hisobot")
 async def rep_start(message: Message, state: FSMContext):
     w = await db.get_active_workers()
@@ -124,7 +112,6 @@ async def rep_start(message: Message, state: FSMContext):
 
 @router.message(DailyReport.entering_hours)
 async def rep_proc(message: Message, state: FSMContext):
-    if message.text == "Bekor qilish": await state.clear(); await message.answer("To'xtadi", reply_markup=admin_main); return
     try:
         h = float(message.text); d = await state.get_data(); idx = d['index']
         await db.add_attendance_manual(d['queue'][idx]['id'], h, "Keldi" if h>0 else "Kelmadi")
@@ -134,43 +121,7 @@ async def rep_proc(message: Message, state: FSMContext):
         else: await state.clear(); await message.answer("✅ <b>Yakunlandi!</b>", reply_markup=admin_main)
     except: await message.answer("Raqam yozing")
 
-# STATUS & EXCEL
-@router.message(F.text == "📊 Joriy holat")
-async def status(message: Message):
-    now = datetime.now(); w = await db.get_active_workers()
-    att = await db.get_month_attendance(now.year, now.month); adv = await db.get_month_advances(now.year, now.month)
-    am = {r['worker_id']: r.get('total', 0) for r in adv}
-    tm = {}; tot = 0
-    for r in att: tm[r['worker_id']] = tm.get(r['worker_id'], 0) + r['hours']
-    
-    head = to_bold(f"HOLAT ({now.strftime('%B')})")
-    txt = f"📊 {head}\n➖➖➖➖➖➖➖➖➖➖\n"
-    for wk in w:
-        h = tm.get(wk['id'], 0); a = am.get(wk['id'], 0); f = (h*wk['rate']) - a; tot += f
-        txt += f"👤 <b>{wk['name']}</b>\n⏱ {h} soat | 💰 <b>{f:,.0f}</b>\n───────────────\n"
-    txt += f"\n💵 JAMI: <b>{tot:,.0f} so'm</b>"
-    await message.answer(txt)
-
-@router.message(F.text == "📥 Excel (Oy yakuni)")
-async def excel(message: Message):
-    msg = await message.answer("⏳ <i>Tayyorlanmoqda...</i>")
-    now = datetime.now()
-    try:
-        w = await db.get_workers_for_report(now.year, now.month)
-        att = await db.get_month_attendance(now.year, now.month)
-        adv = await db.get_month_advances(now.year, now.month)
-        atd = {(r['worker_id'], r['date_str']): r['hours'] for r in att}
-        add = {r['worker_id']: r['total'] for r in adv}
-        
-        fname = generate_report(now.year, now.month, w, atd, add)
-        await msg.delete()
-        caption = to_bold(f"{now.strftime('%B')} OYI HISOBOTI")
-        await message.answer_document(FSInputFile(fname), caption=f"📊 {caption}")
-        os.remove(fname)
-    except Exception as e:
-        await msg.delete(); await message.answer(f"❌ Xato: {str(e)}")
-
-# AVANS (ADMIN QIDIRUV BILAN)
+# --- AVANS (SEARCH & SELECT) ---
 @router.message(F.text == "💰 Avans yozish")
 async def av_s(message: Message, state: FSMContext):
     await state.set_state(AddAdvance.worker_select)
@@ -178,7 +129,6 @@ async def av_s(message: Message, state: FSMContext):
 
 @router.message(AddAdvance.worker_select)
 async def av_w(message: Message, state: FSMContext):
-    if message.text == "Bekor qilish": await state.clear(); await message.answer("Bekor", reply_markup=admin_main); return
     txt = message.text.strip(); wid = None
     if txt.isdigit(): wid = int(txt)
     else:
@@ -206,7 +156,46 @@ async def av_a(message: Message, state: FSMContext):
         await state.clear(); await message.answer("✅ Yozildi", reply_markup=admin_main)
     except: await message.answer("Xato summa")
 
-# CALLBACKS
+# --- LIST & STATUS ---
+@router.message(F.text == "👥 Ishchilar")
+async def list_w(m: Message):
+    w = await db.get_active_workers()
+    head = to_bold("ISHCHILAR")
+    txt = f"📋 {head}\n➖➖➖➖➖➖➖➖➖➖\n"
+    for k in w: txt += f"🆔 <code>{k['id']}</code> | <b>{k['name']}</b>\n📍 {k.get('location','-')} | 💵 {k['rate']:,}\n───────────────\n"
+    await m.answer(txt)
+
+@router.message(F.text == "📊 Joriy holat")
+async def status(m: Message):
+    now = datetime.now()
+    w, att, adv = await db.get_active_workers(), await db.get_month_attendance(now.year, now.month), await db.get_month_advances(now.year, now.month)
+    am = {r['worker_id']: r.get('total', 0) for r in adv}
+    tm = {}
+    for r in att: tm[r['worker_id']] = tm.get(r['worker_id'], 0) + r['hours']
+    
+    head = to_bold(f"HOLAT ({now.strftime('%B')})")
+    txt = f"📊 {head}\n➖➖➖➖➖➖➖➖➖➖\n"; tot = 0
+    for wk in w:
+        h = tm.get(wk['id'], 0); a = am.get(wk['id'], 0); f = (h * wk['rate']) - a; tot += f
+        txt += f"👤 <b>{wk['name']}</b>\n⏱ {h} soat | 💰 <b>{f:,.0f}</b>\n───────────────\n"
+    txt += f"\n💵 JAMI: <b>{tot:,.0f} so'm</b>"
+    await m.answer(txt)
+
+# --- EXCEL ---
+@router.message(F.text == "📥 Excel (Oy yakuni)")
+async def excel(m: Message):
+    msg = await m.answer("⏳ <i>Tayyorlanmoqda...</i>")
+    now = datetime.now()
+    try:
+        w, atd, add = await db.get_report_data_full(now.year, now.month)
+        fname = generate_report(now.year, now.month, w, atd, add)
+        await msg.delete()
+        await m.answer_document(FSInputFile(fname), caption=f"📊 {to_bold(now.strftime('%B'))}")
+        os.remove(fname)
+    except Exception as e:
+        await msg.delete(); await m.answer(f"❌ Xato: {e}")
+
+# --- CALLBACKS (AVANS) ---
 @router.callback_query(F.data.startswith("app_adv_"))
 async def app_av(call: CallbackQuery):
     p = call.data.split("_"); wid = int(p[2]); amt = float(p[3])
