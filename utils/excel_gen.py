@@ -4,10 +4,10 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
-HEADER_FILL = PatternFill(start_color="FFD966", end_color="FFD966", fill_type="solid")
-BLOCK_FILL = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
-ABSENT_FILL = PatternFill(start_color="F4CCCC", end_color="F4CCCC", fill_type="solid")
-WHITE_FILL = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+HEADER_FILL = PatternFill(start_color="FFD966", fill_type="solid")
+BLOCK_FILL = PatternFill(start_color="FFF2CC", fill_type="solid")
+ABSENT_FILL = PatternFill(start_color="F4CCCC", fill_type="solid")
+WHITE_FILL = PatternFill(start_color="FFFFFF", fill_type="solid")
 BIG_TITLE = Font(bold=True, name='Calibri', size=16)
 TITLE_FONT = Font(bold=True, name='Calibri', size=11)
 DATA_FONT = Font(name='Calibri', size=11)
@@ -21,18 +21,14 @@ MONTHS = {1:"YANVAR", 2:"FEVRAL", 3:"MART", 4:"APREL", 5:"MAY", 6:"IYUN", 7:"IYU
 def generate_report(year, month, workers_data, attendance_data, advances_data):
     wb = Workbook(); ws = wb.active
     ws.title = f"{month}-{year}"
-    # Sort: Location keyin Name
     workers_data.sort(key=lambda x: (x.get('location', '') or 'ZZZZ', x['name']))
-    
     num_days = calendar.monthrange(year, month)[1]
     
-    # Title
     total_cols = num_days + 7
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
     ws.cell(row=1, column=1, value=f"{MONTHS.get(month,'')} {year} - DAVOMAT").font = BIG_TITLE
     ws.cell(row=1, column=1).alignment = CENTER_ALIGN; ws.cell(row=1, column=1).fill = WHITE_FILL
 
-    # Header
     ws.column_dimensions['A'].width = 5; ws.column_dimensions['B'].width = 40
     ws.cell(row=2, column=1, value="№").font = TITLE_FONT
     ws.cell(row=2, column=2, value="F.I.O").font = TITLE_FONT
@@ -53,7 +49,6 @@ def generate_report(year, month, workers_data, attendance_data, advances_data):
         ws.cell(row=2, column=col).fill=HEADER_FILL; ws.cell(row=2, column=col).border=ALL_BORDER; ws.cell(row=2, column=col).alignment=CENTER_ALIGN
         ws.column_dimensions[get_column_letter(col)].width = 13
 
-    # Rows
     row = 3; last_loc = None; counter = 1
     for w in workers_data:
         curr_loc = w.get('location', 'Umumiy') or 'Umumiy'
@@ -68,10 +63,9 @@ def generate_report(year, month, workers_data, attendance_data, advances_data):
         ws.cell(row=row, column=2, value=w['name']).border=ALL_BORDER; ws.cell(row=row, column=2).font=DATA_FONT
         counter += 1
 
-        # DATE FIX (Date vs Datetime error prevention)
+        # DATE TYPE FIX
         created_at = w['created_at']
         if isinstance(created_at, datetime): created_at = created_at.date()
-        
         archived_at = w['archived_at']
         if isinstance(archived_at, datetime): archived_at = archived_at.date()
 
@@ -83,7 +77,6 @@ def generate_report(year, month, workers_data, attendance_data, advances_data):
             cell = ws.cell(row=row, column=col)
             cell.border=ALL_BORDER; cell.alignment=CENTER_ALIGN; cell.font=DATA_FONT
             
-            # Logic: Before join or After leave -> RED
             if (curr < created_at) or (archived_at and curr > archived_at):
                 cell.fill = ABSENT_FILL
             else:
@@ -94,13 +87,10 @@ def generate_report(year, month, workers_data, attendance_data, advances_data):
 
         ws.cell(row=row, column=start_calc, value=w['rate']).border=ALL_BORDER; ws.cell(row=row, column=start_calc).number_format='#,##0'
         ws.cell(row=row, column=start_calc+1, value=tot_h).border=ALL_BORDER; ws.cell(row=row, column=start_calc+1).font=BOLD_DATA
-        
         adv = advances_data.get(w['id'], 0)
         ws.cell(row=row, column=start_calc+2, value=adv).border=ALL_BORDER; ws.cell(row=row, column=start_calc+2).number_format='#,##0'
-        
         gross = tot_h * w['rate']
         ws.cell(row=row, column=start_calc+3, value=gross).border=ALL_BORDER; ws.cell(row=row, column=start_calc+3).number_format='#,##0'
-        
         net = gross - adv
         c = ws.cell(row=row, column=start_calc+4, value=net)
         c.border=ALL_BORDER; c.font=BOLD_DATA; c.number_format='#,##0'; c.fill=PatternFill(start_color="E2EFDA", fill_type="solid")

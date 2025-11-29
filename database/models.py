@@ -9,7 +9,7 @@ async def create_tables():
     try:
         conn = await asyncpg.connect(db_url)
         
-        # Jadvallarni yaratish
+        # Jadvallar
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS workers(
                 id SERIAL PRIMARY KEY,
@@ -40,22 +40,19 @@ async def create_tables():
             );
         """)
 
-        # Migratsiya (Ustunlar bor-yo'qligini tekshirib, xatosiz qo'shish)
-        alter_queries = [
+        # Migratsiya (xatosiz)
+        queries = [
             "ALTER TABLE workers ADD COLUMN location TEXT",
             "ALTER TABLE workers ADD COLUMN created_at DATE DEFAULT CURRENT_DATE",
             "ALTER TABLE workers ADD COLUMN archived_at DATE DEFAULT NULL",
             "ALTER TABLE attendance ADD COLUMN start_time TIMESTAMP",
             "ALTER TABLE attendance ADD COLUMN end_time TIMESTAMP"
         ]
-        
-        for q in alter_queries:
+        for q in queries:
             try: await conn.execute(q)
-            except asyncpg.exceptions.DuplicateColumnError: pass
-            except Exception as e: logging.warning(f"Migratsiya ogohlantirishi: {e}")
+            except: pass
             
         await conn.close()
-        logging.info("✅ Baza tizimi to'liq yuklandi.")
-        
+        logging.info("✅ Baza tizimi yuklandi.")
     except Exception as e:
-        logging.critical(f"❌ BAZA XATOSI: {e}")
+        logging.error(f"❌ Baza xatosi: {e}")

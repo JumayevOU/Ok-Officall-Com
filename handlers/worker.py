@@ -16,13 +16,11 @@ def to_bold(text):
     trans = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "𝐀𝐁𝐂𝐃𝐄𝐅𝐆𝐇𝐈𝐉𝐊𝐋𝐌𝐍𝐎𝐏𝐐𝐑𝐒𝐓𝐔𝐕𝐖𝐗𝐘𝐙𝐚𝐛𝐜𝐝𝐞𝐟𝐠𝐡𝐢𝐣𝐤𝐥𝐦𝐧𝐨𝐩𝐪𝐫𝐬𝐭𝐮𝐯𝐰𝐱𝐲𝐳")
     return text.translate(trans)
 
-# --- GLOBAL CANCEL ---
 @router.message(F.text == "Bekor qilish")
 async def worker_cancel(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("❌ <b>Bekor qilindi.</b>", reply_markup=worker_main)
 
-# --- CHECK IN ---
 @router.message(F.text == "🏢 Keldim")
 async def check_in_start(message: Message, state: FSMContext):
     conn = await db.get_db()
@@ -34,18 +32,25 @@ async def check_in_start(message: Message, state: FSMContext):
         await message.answer("⚠️ <b>Siz allaqachon ishdasiz!</b>"); return
 
     await state.set_state("check_in_loc")
-    await message.answer("🛡 <b>Iltimos, JONLI LOKATSIYA (Live Location) yuboring.</b>", reply_markup=cancel_kb)
+    await message.answer("📍 <b>Lokatsiya yuboring:</b>\n<i>(Pastdagi tugmani bosing)</i>", reply_markup=location_kb)
 
 @router.message(F.location, F.state == "check_in_loc") 
 async def check_in_verify(message: Message, state: FSMContext):
-    if message.location.live_period is None:
-        await message.answer("🚫 <b>Faqat Jonli Lokatsiya!</b>"); return
+    # ANTI-CHEAT
+    if message.forward_from or message.forward_date:
+        await message.answer("🚫 <b>Forward qilingan lokatsiya qabul qilinmaydi!</b>", reply_markup=location_kb); return
+    
+    # TTL (1 daqiqa)
+    msg_time = message.date.replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    if (now - msg_time).total_seconds() > 60:
+        await message.answer("🚫 <b>Bu eski lokatsiya!</b> Yangisini yuboring.", reply_markup=location_kb); return
 
     wl = await db.get_work_location()
     if not wl: await message.answer("⚠️ Lokatsiya o'rnatilmagan"); await state.clear(); return
         
     dist = calculate_distance(message.location.latitude, message.location.longitude, wl[0], wl[1])
-    if dist <= 50:
+    if dist <= 100: # 100 metr radius
         conn = await db.get_db(); wid = await conn.fetchval("SELECT id FROM workers WHERE telegram_id=$1", message.from_user.id); await conn.close()
         await db.check_in_worker(wid)
         t = datetime.now(timezone(timedelta(hours=5))).strftime("%H:%M")
@@ -55,20 +60,20 @@ async def check_in_verify(message: Message, state: FSMContext):
     else:
         await message.answer(f"🚫 <b>Uzoqdasiz: {int(dist)}m</b>\n<i>Yaqinroq keling.</i>")
 
-# --- CHECK OUT ---
 @router.message(F.text == "🏠 Ketdim")
 async def check_out_start(message: Message, state: FSMContext):
     await state.set_state("check_out_loc")
-    await message.answer("📍 <b>Ketish uchun ham Jonli Lokatsiya yuboring:</b>", reply_markup=cancel_kb)
+    await message.answer("📍 <b>Ketish uchun lokatsiya yuboring:</b>", reply_markup=location_kb)
 
 @router.message(F.location, F.state == "check_out_loc")
 async def check_out_verify(message: Message, state: FSMContext):
-    if message.location.live_period is None: await message.answer("🚫 <b>Jonli Lokatsiya kerak!</b>"); return
-    
+    if message.forward_from or message.forward_date:
+        await message.answer("🚫 <b>Forward mumkin emas!</b>"); return
+
     wl = await db.get_work_location()
     dist = calculate_distance(message.location.latitude, message.location.longitude, wl[0], wl[1])
     
-    if dist <= 100:
+    if dist <= 200:
         conn = await db.get_db(); wid = await conn.fetchval("SELECT id FROM workers WHERE telegram_id=$1", message.from_user.id); await conn.close()
         suc, h = await db.check_out_worker(wid)
         if suc:
@@ -78,7 +83,6 @@ async def check_out_verify(message: Message, state: FSMContext):
         await state.clear()
     else: await message.answer(f"🚫 <b>Uzoqdasiz: {int(dist)}m</b>")
 
-# --- STATS & AVANS ---
 @router.message(F.text == "💰 Mening hisobim")
 async def my_stats(message: Message):
     stats = await db.get_worker_stats(message.from_user.id)
