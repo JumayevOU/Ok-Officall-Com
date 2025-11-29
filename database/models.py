@@ -9,7 +9,7 @@ async def create_tables():
     try:
         conn = await asyncpg.connect(db_url)
         
-        # Jadvallar
+        # 1. Ishchilar
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS workers(
                 id SERIAL PRIMARY KEY,
@@ -21,38 +21,39 @@ async def create_tables():
                 active BOOLEAN DEFAULT TRUE,
                 created_at DATE DEFAULT CURRENT_DATE,
                 archived_at DATE DEFAULT NULL
-            );
-            CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
+            )
+        """)
+
+        # 2. Davomat (Oddiy: Sana va Soat)
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS attendance(
                 id SERIAL PRIMARY KEY,
                 worker_id INTEGER REFERENCES workers(id),
                 date DATE,
-                start_time TIMESTAMP,
-                end_time TIMESTAMP,
                 hours REAL,
                 status TEXT
-            );
+            )
+        """)
+
+        # 3. Avans
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS advances(
                 id SERIAL PRIMARY KEY,
                 worker_id INTEGER REFERENCES workers(id),
                 date DATE,
                 amount REAL
-            );
+            )
         """)
+        
+        # Migratsiya (Ehtiyot shart)
+        try:
+            await conn.execute("ALTER TABLE workers ADD COLUMN location TEXT")
+            await conn.execute("ALTER TABLE workers ADD COLUMN created_at DATE DEFAULT CURRENT_DATE")
+            await conn.execute("ALTER TABLE workers ADD COLUMN archived_at DATE DEFAULT NULL")
+        except: pass
 
-        # Migratsiya (xatosiz)
-        queries = [
-            "ALTER TABLE workers ADD COLUMN location TEXT",
-            "ALTER TABLE workers ADD COLUMN created_at DATE DEFAULT CURRENT_DATE",
-            "ALTER TABLE workers ADD COLUMN archived_at DATE DEFAULT NULL",
-            "ALTER TABLE attendance ADD COLUMN start_time TIMESTAMP",
-            "ALTER TABLE attendance ADD COLUMN end_time TIMESTAMP"
-        ]
-        for q in queries:
-            try: await conn.execute(q)
-            except: pass
-            
         await conn.close()
-        logging.info("✅ Baza tizimi yuklandi.")
+        logging.info("✅ Baza (Stabil) yuklandi.")
+        
     except Exception as e:
         logging.error(f"❌ Baza xatosi: {e}")

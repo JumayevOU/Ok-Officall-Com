@@ -18,18 +18,27 @@ def to_bold(text):
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     if message.from_user.id == ADMIN_ID:
-        head = to_bold("XO'JAYIN PANELI")
-        await message.answer(f"👑 {head}\nXush kelibsiz!", reply_markup=admin_main)
+        header = to_bold("XO'JAYIN PANELI")
+        await message.answer(f"👋 <b>Xush kelibsiz!</b>\n\n👑 {header}\n<i>Boshqaruv paneliga marhamat.</i>", reply_markup=admin_main)
     else:
-        head = to_bold("TIZIMGA KIRISH")
-        await message.answer(f"🔐 {head}\n🆔 <b>ID KODni yozing:</b>")
+        header = to_bold("TIZIMGA KIRISH")
+        msg = (
+            f"🔐 {header}\n"
+            "➖➖➖➖➖➖➖➖➖➖\n\n"
+            "👋 Assalomu alaykum!\n"
+            "🆔 Iltimos, <b>ID KOD</b>ingizni kiriting:"
+        )
+        await message.answer(msg)
         await state.set_state(WorkerLogin.waiting_code)
 
 @router.message(WorkerLogin.waiting_code)
-async def login(message: Message, state: FSMContext):
-    if not message.text.isdigit(): return
-    suc, msg = await db.verify_login(message.text, message.from_user.id)
-    if suc:
-        head = to_bold("MUVAFFAQIYATLI")
-        await message.answer(f"✅ {head}\nSalom, <b>{msg}</b>!", reply_markup=worker_main); await state.clear()
-    else: await message.answer(msg)
+async def process_login(message: Message, state: FSMContext):
+    if not message.text.isdigit(): await message.answer("⚠️ <i>Faqat raqam yozing!</i>"); return
+    
+    success, msg = await db.verify_login(message.text, message.from_user.id)
+    if success:
+        header = to_bold("MUVAFFAQIYATLI")
+        await message.answer(f"✅ {header}\n\nXush kelibsiz, <b>{msg}</b>!", reply_markup=worker_main)
+        await state.clear()
+    else:
+        await message.answer(f"🚫 <b>{msg}</b>\n<i>Qaytadan urinib ko'ring:</i>")

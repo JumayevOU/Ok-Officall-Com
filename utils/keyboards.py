@@ -12,7 +12,6 @@ cancel_kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="Bekor qilish")]]
 
 settings_kb = InlineKeyboardMarkup(
     inline_keyboard=[
-        [InlineKeyboardButton(text="📍 Lokatsiya O'rnatish", callback_data="set_gps")],
         [InlineKeyboardButton(text="➕ Yangi xodim", callback_data="set_add")],
         [InlineKeyboardButton(text="✏️ Tahrirlash", callback_data="set_edit"), InlineKeyboardButton(text="🗑 O'chirish", callback_data="set_del")]
     ]
@@ -34,15 +33,5 @@ def approval_kb(worker_id, amount):
     )
 
 worker_main = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="🏢 Keldim"), KeyboardButton(text="🏠 Ketdim")],
-        [KeyboardButton(text="💰 Mening hisobim"), KeyboardButton(text="💸 Avans so'rash")]
-    ], resize_keyboard=True
-)
-
-location_kb = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="📍 Lokatsiya yuborish", request_location=True)],
-        [KeyboardButton(text="Bekor qilish")]
-    ], resize_keyboard=True
+    keyboard=[[KeyboardButton(text="💰 Mening hisobim"), KeyboardButton(text="💸 Avans so'rash")]], resize_keyboard=True
 )
