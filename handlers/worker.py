@@ -1,7 +1,7 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from utils.keyboards import worker_main_kb, cancel_kb, confirmation_kb
+from utils.keyboards import worker_main_kb, cancel_kb
 from utils.states import WorkerAdvance
 from database import requests as db
 import os
@@ -95,6 +95,11 @@ async def start_advance_request(message: Message, state: FSMContext):
 @router.message(WorkerAdvance.enter_amount)
 async def process_advance_request(message: Message, state: FSMContext):
     """Avans so'rov miqdorini qabul qilish"""
+    if message.text == "❌ Bekor qilish":
+        await state.clear()
+        await message.answer("✅ Amal bekor qilindi", reply_markup=worker_main_kb())
+        return
+    
     try:
         amount = float(message.text.strip())
         
@@ -120,63 +125,22 @@ async def process_advance_request(message: Message, state: FSMContext):
             )
             return
         
-        # Tasdiqlash uchun saqlash
-        advance_requests[message.from_user.id] = amount
-        await state.set_state(WorkerAdvance.confirmation)
-        
-        confirmation_text = (
-            f"🔔 {format_bold('AVANS SO\'ROVI')}\n"
-            f"────────────────\n\n"
-            f"👤 <b>Ishchi:</b> {stats['name']}\n"
-            f"💰 <b>Summa:</b> {amount:,.0f} so'm\n\n"
-            f"📝 <b>So'rovni admin ga yuboraymi?</b>"
-        )
-        
-        await message.answer(
-            confirmation_text,
-            reply_markup=confirmation_kb("advance_request", str(amount))
-        )
-        
-    except ValueError:
-        await message.answer("⚠️ <b>Iltimos, faqat raqam kiriting!</b>")
-
-@router.callback_query(F.data.startswith("confirm_advance_request_"))
-async def confirm_advance_request(call: CallbackQuery, state: FSMContext):
-    """Avans so'rovini tasdiqlash va admin ga yuborish"""
-    try:
-        user_id = call.from_user.id
-        amount = advance_requests.get(user_id)
-        
-        if not amount:
-            await call.message.edit_text("❌ <b>So'rov ma'lumotlari topilmadi</b>")
-            await state.clear()
-            return
-        
-        # Ishchi ma'lumotlarini olish
-        worker = await db.get_worker_by_id(user_id)
-        if not worker:
-            await call.message.edit_text("❌ <b>Profil ma'lumotlari topilmadi</b>")
-            await state.clear()
-            return
-        
-        # Admin ga xabar yuborish
+        # Admin ga so'rov yuborish
         admin_id = int(os.getenv("ADMIN_ID", 0))
         if admin_id:
+            from utils.keyboards import approval_kb
             request_text = (
                 f"🔔 {format_bold('YANGI AVANS SO\'ROVI')}\n"
                 f"────────────────\n\n"
-                f"👤 <b>Ishchi:</b> {worker['name']}\n"
-                f"🆔 <b>ID:</b> {worker['id']}\n"
-                f"📍 <b>Joyi:</b> {worker.get('location', 'Umumiy')}\n"
+                f"👤 <b>Ishchi:</b> {stats['name']}\n"
                 f"💰 <b>Summa:</b> {amount:,.0f} so'm\n"
                 f"📅 <b>Vaqt:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}"
             )
             
-            from utils.keyboards import approval_kb
-            await call.bot.send_message(
+            await message.bot.send_message(
                 admin_id,
                 request_text,
-                reply_markup=approval_kb(worker['id'], amount)
+                reply_markup=approval_kb(message.from_user.id, amount)
             )
         
         # Ishchiga tasdiqlash xabari
@@ -189,46 +153,8 @@ async def confirm_advance_request(call: CallbackQuery, state: FSMContext):
             f"📩 Tasdiqlash/rad etish haqida xabar beramiz."
         )
         
-        await call.message.edit_text(success_text)
-        
-        # Ma'lumotlarni tozalash
-        if user_id in advance_requests:
-            del advance_requests[user_id]
+        await message.answer(success_text, reply_markup=worker_main_kb())
         await state.clear()
         
-    except Exception as e:
-        logging.error(f"Avans so'rovini yuborishda xato: {e}")
-        await call.message.edit_text("❌ <b>So'rovni yuborishda xatolik</b>")
-        await state.clear()
-
-@router.callback_query(F.data.startswith("cancel_advance"))
-async def cancel_advance_request(call: CallbackQuery, state: FSMContext):
-    """Avans so'rovini bekor qilish"""
-    user_id = call.from_user.id
-    if user_id in advance_requests:
-        del advance_requests[user_id]
-    
-    await call.message.edit_text("❌ <b>Avans so'rovi bekor qilindi</b>")
-    await state.clear()
-    await call.message.answer("🏠 <b>Asosiy menyu</b>", reply_markup=worker_main_kb())
-
-# --- YORDAM ---
-@router.message(F.text == "ℹ️ Yordam")
-async def show_help(message: Message):
-    """Ishchi uchun yordam"""
-    help_text = (
-        f"🆘 {format_bold('YORDAM')}\n"
-        f"────────────────\n\n"
-        f"<b>Mavjud funksiyalar:</b>\n\n"
-        f"💰 <b>Mening hisobim</b>\n"
-        f"• Joriy oy statistikasi\n"
-        f"• Ishlagan soatlaringiz\n"
-        f"• Avanslar va qoldiq\n\n"
-        f"💸 <b>Avans so'rash</b>\n"
-        f"• Admin ga avans so'rovi yuborish\n"
-        f"• Maksimal 70% gacha ruxsat etiladi\n\n"
-        f"📞 <b>Aloqa</b>\n"
-        f"Muammo bo'lsa admin bilan bog'laning."
-    )
-    
-    await message.answer(help_text, reply_markup=worker_main_kb())
+    except ValueError:
+        await message.answer("⚠️ <b>Iltimos, faqat raqam kiriting!</b>")

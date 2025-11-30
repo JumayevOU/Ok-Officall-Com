@@ -42,16 +42,6 @@ def generate_report(year: int, month: int, workers_data: List[Dict],
                    attendance_data: Dict, advances_data: Dict) -> str:
     """
     Excel hisobot yaratish
-    
-    Args:
-        year: Yil
-        month: Oy
-        workers_data: Ishchilar ma'lumotlari
-        attendance_data: Davomat ma'lumotlari {(worker_id, date): hours}
-        advances_data: Avans ma'lumotlari {worker_id: total_advance}
-    
-    Returns:
-        str: Fayl nomi
     """
     try:
         wb = Workbook()

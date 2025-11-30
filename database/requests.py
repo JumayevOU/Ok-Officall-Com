@@ -10,32 +10,57 @@ class DatabaseError(Exception):
     """Maxsus database xatoliklari"""
     pass
 
+async def get_db():
+    """Database ulanishini olish"""
+    try:
+        conn = await asyncpg.connect(os.getenv("DATABASE_URL"))
+        return conn
+    except Exception as e:
+        logging.error(f"Database ulanish xatosi: {e}")
+        return None
+
 async def execute_query(query: str, *args) -> Any:
     """Umumiy so'rovni bajarish"""
-    if not DB_POOL:
-        raise DatabaseError("Database pool mavjud emas")
+    conn = await get_db()
+    if not conn:
+        raise DatabaseError("Database ga ulanib bo'lmadi")
     
     try:
-        async with DB_POOL.acquire() as conn:
-            if query.strip().upper().startswith('SELECT'):
-                return await conn.fetch(query, *args)
-            else:
-                return await conn.execute(query, *args)
+        if query.strip().upper().startswith('SELECT'):
+            result = await conn.fetch(query, *args)
+        else:
+            result = await conn.execute(query, *args)
+        return result
     except Exception as e:
         logging.error(f"Database xatosi: {e} - So'rov: {query}")
         raise DatabaseError(f"Database xatosi: {e}")
+    finally:
+        await conn.close()
 
 # --- ISHCHILAR BO'LIMI ---
 async def add_worker(name: str, rate: float, code: int, location: str = "Umumiy") -> bool:
     """Yangi ishchi qo'shish"""
     try:
-        await execute_query(
-            "INSERT INTO workers (name, rate, code, location) VALUES ($1, $2, $3, $4)",
-            name.strip(), float(rate), int(code), location.strip()
+        # Kod takrorlanmasligini tekshirish
+        conn = await get_db()
+        existing = await conn.fetchrow("SELECT id FROM workers WHERE code = $1", code)
+        if existing:
+            await conn.close()
+            logging.error(f"Kod allaqachon mavjud: {code}")
+            return False
+        
+        await conn.execute(
+            "INSERT INTO workers (name, rate, code, location, active) VALUES ($1, $2, $3, $4, $5)", 
+            name.strip(), float(rate), int(code), location.strip(), True
         )
+        await conn.close()
         return True
     except Exception as e:
         logging.error(f"add_worker xatosi: {e}")
+        try:
+            await conn.close()
+        except:
+            pass
         return False
 
 async def update_worker_field(worker_id: int, field: str, value: Any) -> bool:
@@ -94,8 +119,8 @@ async def search_worker_by_name(search_text: str) -> List[Dict[str, Any]]:
 async def get_worker_by_id(worker_id: int) -> Optional[Dict[str, Any]]:
     """ID bo'yicha ishchi ma'lumotlari"""
     try:
-        row = await execute_query("SELECT * FROM workers WHERE id = $1", worker_id)
-        return dict(row[0]) if row else None
+        rows = await execute_query("SELECT * FROM workers WHERE id = $1", worker_id)
+        return dict(rows[0]) if rows else None
     except Exception as e:
         logging.error(f"get_worker_by_id xatosi: {e}")
         return None

@@ -6,13 +6,12 @@ class AddWorker(StatesGroup):
     location = State()
 
 class EditWorker(StatesGroup):
-    select_worker = State()
-    select_field = State()
-    enter_value = State()
+    waiting_id = State()
+    waiting_field = State()
+    waiting_value = State()
 
 class DeleteWorker(StatesGroup):
-    select_worker = State()
-    confirmation = State()
+    waiting_id = State()
 
 class DailyReport(StatesGroup):
     enter_hours = State()
@@ -23,11 +22,6 @@ class AdminAdvance(StatesGroup):
 
 class WorkerAdvance(StatesGroup):
     enter_amount = State()
-    confirmation = State()
 
 class WorkerLogin(StatesGroup):
     enter_code = State()
-
-class Broadcast(StatesGroup):
-    enter_message = State()
-    confirmation = State()

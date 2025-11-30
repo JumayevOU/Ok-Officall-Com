@@ -4,7 +4,7 @@ import os
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
-from aiogram.enum import ParseMode
+from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from database.models import create_db_pool, create_tables, close_db_pool
 from handlers import admin, worker, other
@@ -85,13 +85,6 @@ class WorkforceBot:
             CronTrigger(hour=18, minute=0),
             id='daily_reminder'
         )
-        
-        # Har yakshanba soat 10:00 da haftalik eslatma
-        self.scheduler.add_job(
-            self._send_weekly_report_reminder,
-            CronTrigger(day_of_week=0, hour=10, minute=0),
-            id='weekly_reminder'
-        )
     
     async def _send_daily_reminder(self):
         """Kunlik eslatma yuborish"""
@@ -107,22 +100,6 @@ class WorkforceBot:
                 logger.info("✅ Kunlik eslatma yuborildi")
         except Exception as e:
             logger.error(f"❌ Eslatma yuborishda xato: {e}")
-    
-    async def _send_weekly_report_reminder(self):
-        """Haftalik eslatma yuborish"""
-        try:
-            admin_id = os.getenv("ADMIN_ID")
-            if admin_id and self.bot:
-                await self.bot.send_message(
-                    chat_id=int(admin_id),
-                    text="📊 <b>Haftalik eslatma</b>\n\n"
-                         "📈 O'tgan hafta statistikasini ko'rib chiqing.\n"
-                         "📥 Excel hisobot tayyorlang.\n"
-                         "👥 Yangi ishchilar qo'shish kerakmi?"
-                )
-                logger.info("✅ Haftalik eslatma yuborildi")
-        except Exception as e:
-            logger.error(f"❌ Haftalik eslatma yuborishda xato: {e}")
     
     async def shutdown(self):
         """Botni to'xtatish"""

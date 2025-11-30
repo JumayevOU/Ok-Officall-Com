@@ -39,29 +39,25 @@ cancel_kb = ReplyKeyboardMarkup(
 remove_kb = ReplyKeyboardRemove()
 
 # --- INLINE KLAVISHATURALAR ---
-def settings_kb():
-    """Sozlamalar menyusi"""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="➕ Yangi ishchi", callback_data="add_worker")],
-            [
-                InlineKeyboardButton(text="✏️ Tahrirlash", callback_data="edit_worker"),
-                InlineKeyboardButton(text="🗑 O'chirish", callback_data="delete_worker")
-            ],
-            [InlineKeyboardButton(text="📊 Statistika", callback_data="stats")]
-        ]
-    )
+settings_kb = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Yangi ishchi", callback_data="add_worker")],
+        [
+            InlineKeyboardButton(text="✏️ Tahrirlash", callback_data="edit_worker"),
+            InlineKeyboardButton(text="🗑 O'chirish", callback_data="delete_worker")
+        ],
+        [InlineKeyboardButton(text="📊 Statistika", callback_data="stats")]
+    ]
+)
 
-def edit_options_kb():
-    """Tahrirlash variantlari"""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="👤 Ism", callback_data="edit_name")],
-            [InlineKeyboardButton(text="💵 Soatlik narx", callback_data="edit_rate")],
-            [InlineKeyboardButton(text="📍 Ish joyi", callback_data="edit_location")],
-            [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_edit")]
-        ]
-    )
+edit_options_kb = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [InlineKeyboardButton(text="👤 Ism", callback_data="edit_name")],
+        [InlineKeyboardButton(text="💵 Soatlik narx", callback_data="edit_rate")],
+        [InlineKeyboardButton(text="📍 Ish joyi", callback_data="edit_location")],
+        [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_edit")]
+    ]
+)
 
 def approval_kb(worker_id: int, amount: float):
     """Avans tasdiqlash"""
@@ -70,17 +66,6 @@ def approval_kb(worker_id: int, amount: float):
             [
                 InlineKeyboardButton(text="✅ Tasdiqlash", callback_data=f"approve_adv_{worker_id}_{amount}"),
                 InlineKeyboardButton(text="❌ Rad etish", callback_data=f"reject_adv_{worker_id}")
-            ]
-        ]
-    )
-
-def confirmation_kb(action: str, data: str = ""):
-    """Tasdiqlash klaviaturasi"""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="✅ Ha", callback_data=f"confirm_{action}_{data}"),
-                InlineKeyboardButton(text="❌ Yo'q", callback_data=f"cancel_{action}")
             ]
         ]
     )

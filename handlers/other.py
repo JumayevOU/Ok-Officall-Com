@@ -116,67 +116,24 @@ async def process_login_code(message: Message, state: FSMContext):
         if attempts >= 3:
             await state.clear()
 
-@router.message(Command("help"))
-async def cmd_help(message: Message):
-    """Yordam komandasi"""
-    help_text = (
-        f"🆘 {format_bold('YORDAM')}\n"
-        f"────────────────\n\n"
-    )
-    
-    if message.from_user.id == ADMIN_ID:
-        help_text += (
-            "<b>Admin buyruqlari:</b>\n"
-            "• /start - Asosiy menyu\n"
-            "• /help - Yordam\n"
-            "• /stats - Statistika\n\n"
-            "<b>Admin funksiyalari:</b>\n"
-            "• 📝 Bugungi hisobot - Davomat kiritish\n"
-            "• 📊 Joriy holat - Oylik statistika\n"
-            "• 👥 Ishchilar - Ishchilar ro'yxati\n"
-            "• 💰 Avans yozish - Ishchilarga avans\n"
-            "• 📥 Excel hisobot - Excel formatda yuklab olish\n"
-            "• ⚙️ Sozlamalar - Tizim sozlamalari"
-        )
-    else:
-        help_text += (
-            "<b>Ishchi buyruqlari:</b>\n"
-            "• /start - Asosiy menyu\n"
-            "• /help - Yordam\n\n"
-            "<b>Ishchi funksiyalari:</b>\n"
-            "• 💰 Mening hisobim - Shaxsiy statistika\n"
-            "• 💸 Avans so'rash - Avans so'rov yuborish"
-        )
-    
-    await message.answer(help_text)
-
-@router.message(Command("stats"))
-async def cmd_stats(message: Message):
-    """Statistika komandasi"""
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("❌ Bu buyruq faqat admin uchun!")
-        return
-    
-    # Bu yerda stats logikasini qo'shish mumkin
-    stats_text = (
-        f"📈 {format_bold('TIZIM STATISTIKASI')}\n"
-        f"────────────────\n\n"
-        f"🔄 Statistika funksiyasi tez orada qo'shiladi..."
-    )
-    await message.answer(stats_text)
-
 @router.message(F.text == "❌ Bekor qilish")
 async def cancel_handler(message: Message, state: FSMContext):
-    """Bekor qilish handleri"""
+    """Bekor qilish handleri - barcha state lar uchun"""
     current_state = await state.get_state()
     
     if current_state is None:
-        await message.answer("⚠️ Hech qanday amal bajarilmagan", reply_markup=admin_main_kb())
+        # Agar state bo'lmasa, oddiy menyuni ko'rsatish
+        if message.from_user.id == ADMIN_ID:
+            await message.answer("🏠 <b>Asosiy menyu</b>", reply_markup=admin_main_kb())
+        else:
+            await message.answer("🏠 <b>Asosiy menyu</b>", reply_markup=worker_main_kb())
         return
     
+    # State ni tozalash
     await state.clear()
     
+    # Foydalanuvchi turiga qarab javob berish
     if message.from_user.id == ADMIN_ID:
-        await message.answer("✅ Amal bekor qilindi", reply_markup=admin_main_kb())
+        await message.answer("✅ <b>Amal bekor qilindi</b>", reply_markup=admin_main_kb())
     else:
-        await message.answer("✅ Amal bekor qilindi", reply_markup=worker_main_kb())
+        await message.answer("✅ <b>Amal bekor qilindi</b>", reply_markup=worker_main_kb())
