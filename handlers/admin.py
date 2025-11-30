@@ -9,7 +9,7 @@ from utils.excel_gen import generate_report
 import os
 import random
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any
 
 router = Router()
@@ -24,12 +24,23 @@ except (ValueError, TypeError):
 # FSM ma'lumotlari
 fsm_data: Dict[int, Dict[str, Any]] = {}
 
+# Oylar tarjimasi
+MONTHS = {
+    1: "Yanvar", 2: "Fevral", 3: "Mart", 4: "Aprel",
+    5: "May", 6: "Iyun", 7: "Iyul", 8: "Avgust",
+    9: "Sentabr", 10: "Oktabr", 11: "Noyabr", 12: "Dekabr"
+}
+
 def format_bold(text: str) -> str:
     """Matnni qalin qilish"""
     return f"<b>{text}</b>"
 
 def generate_unique_code() -> int:
     return random.randint(1000, 9999)
+
+def get_current_time():
+    """O'zbekiston vaqtini olish (UTC+5)"""
+    return datetime.utcnow() + timedelta(hours=5)
 
 # --- TEKSHIRUV FUNKSIYASI ---
 async def is_admin(user_id: int, message: Message = None):
@@ -71,7 +82,7 @@ async def show_workers_list(message: Message, state: FSMContext):
             await message.answer(header + "<i>🤷 Hozircha ishchilar ro'yxati bo'sh</i>", reply_markup=admin_main_kb())
             return
 
-        # --- TUZATISH: Xabarni bo'laklash (Chunking) ---
+        # --- Xabarni bo'laklash (Chunking) ---
         current_text = header
         
         for worker in workers:
@@ -110,7 +121,7 @@ async def show_current_status(message: Message, state: FSMContext):
     await state.clear()
     
     try:
-        now = datetime.now()
+        now = get_current_time() # Vaqt to'g'irlandi
         workers = await db.get_active_workers()
         attendance, advances = await db.get_month_data(now.year, now.month)
         
@@ -127,9 +138,12 @@ async def show_current_status(message: Message, state: FSMContext):
             total = record['total']
             advances_dict[worker_id] = total
         
+        # Oyni o'zbekcha chiqarish
+        month_name = MONTHS.get(now.month, str(now.month))
+        
         header = (
             f"📊 {format_bold('JORIY HOLAT')}\n"
-            f"🗓 {now.strftime('%B %Y')}\n"
+            f"🗓 {month_name} {now.year}\n"
             f"────────────────\n\n"
         )
         
@@ -137,7 +151,7 @@ async def show_current_status(message: Message, state: FSMContext):
             await message.answer(header + "<i>🤷 Hozircha ma'lumot yo'q</i>", reply_markup=admin_main_kb())
             return
 
-        # --- TUZATISH: Xabarni bo'laklash ---
+        # --- Xabarni bo'laklash ---
         current_text = header
         total_salary = 0
         
@@ -189,7 +203,7 @@ async def generate_excel_report(message: Message, state: FSMContext):
     processing_msg = await message.answer("🔄 <i>Hisobot tayyorlanmoqda...</i>")
     
     try:
-        now = datetime.now()
+        now = get_current_time() # Vaqt to'g'irlandi
         
         # Bazadan ma'lumot olish
         workers = await db.get_workers_for_report(now.year, now.month)
@@ -216,10 +230,10 @@ async def generate_excel_report(message: Message, state: FSMContext):
         
         await processing_msg.delete()
         
-        # Faylni yuborish
-        month_year = now.strftime("%B %Y")
+        # Faylni yuborish (O'zbekcha oy)
+        month_name = MONTHS.get(now.month, str(now.month))
         caption = (
-            f"📊 {format_bold(month_year + ' OYI HISOBOTI')}\n"
+            f"📊 {format_bold(f'{month_name} {now.year} OYI HISOBOTI')}\n"
             f"────────────────\n\n"
             f"👥 Ishchilar: {len(workers)} ta\n"
             f"📅 Sana: {now.strftime('%d.%m.%Y %H:%M')}"
