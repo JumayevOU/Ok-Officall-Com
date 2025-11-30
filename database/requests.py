@@ -27,6 +27,58 @@ async def execute_query(query: str, *args) -> Any:
         logging.error(f"❌ DB Xatosi: {e}\nQuery: {query}\nArgs: {args}")
         return []
 
+# --- YANGI: UMUMIY STATISTIKA ---
+async def get_general_statistics() -> Dict[str, Any]:
+    try:
+        # 1. Jami aktiv ishchilar
+        res_workers = await execute_query("SELECT COUNT(*) as cnt FROM workers WHERE active = TRUE")
+        total_workers = res_workers[0]['cnt'] if res_workers else 0
+        
+        # Joriy oy
+        month_str = datetime.now().strftime("%Y-%m")
+        
+        # 2. Jami soat (Joriy oy)
+        res_hours = await execute_query("""
+            SELECT SUM(hours) as total FROM attendance 
+            WHERE TO_CHAR(date, 'YYYY-MM') = $1
+        """, month_str)
+        total_hours = float(res_hours[0]['total']) if res_hours and res_hours[0]['total'] else 0.0
+        
+        # 3. Jami avans (Joriy oy)
+        res_adv = await execute_query("""
+            SELECT SUM(amount) as total FROM advances 
+            WHERE TO_CHAR(date, 'YYYY-MM') = $1 AND approved = TRUE
+        """, month_str)
+        total_advance = float(res_adv[0]['total']) if res_adv and res_adv[0]['total'] else 0.0
+        
+        # 4. Top ishchi (Eng ko'p soat ishlagan)
+        res_top = await execute_query("""
+            SELECT w.name, SUM(a.hours) as total_h
+            FROM attendance a
+            JOIN workers w ON a.worker_id = w.id
+            WHERE TO_CHAR(a.date, 'YYYY-MM') = $1
+            GROUP BY w.name
+            ORDER BY total_h DESC
+            LIMIT 1
+        """, month_str)
+        
+        top_worker = None
+        if res_top:
+            top_worker = {
+                'name': res_top[0]['name'],
+                'hours': float(res_top[0]['total_h'])
+            }
+            
+        return {
+            'workers': total_workers,
+            'hours': total_hours,
+            'advance': total_advance,
+            'top_worker': top_worker
+        }
+    except Exception as e:
+        logging.error(f"Statistika xatosi: {e}")
+        return {}
+
 # --- ISHCHILAR ---
 async def add_worker(name: str, rate: float, code: int) -> bool:
     try:
