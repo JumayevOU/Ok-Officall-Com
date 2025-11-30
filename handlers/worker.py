@@ -7,9 +7,17 @@ from database import requests as db
 import os
 import logging
 from datetime import datetime
-from typing import Dict
+from typing import Dict, List
 
 router = Router()
+
+# --- ADMINLAR RO'YXATINI OLISH (MULTI-ADMIN) ---
+ADMIN_LIST: List[int] = []
+try:
+    env_admins = os.getenv("ADMIN_ID", "")
+    ADMIN_LIST = [int(id_str.strip()) for id_str in env_admins.split(",") if id_str.strip()]
+except (ValueError, TypeError):
+    logging.warning("ADMIN_ID worker.py da to'g'ri o'qilmadi")
 
 # Avans so'rovlari
 advance_requests: Dict[int, float] = {}
@@ -125,9 +133,8 @@ async def process_advance_request(message: Message, state: FSMContext):
             )
             return
         
-        # Admin ga so'rov yuborish
-        admin_id = int(os.getenv("ADMIN_ID", 0))
-        if admin_id:
+        # Admin(lar)ga so'rov yuborish (MULTI-ADMIN)
+        if ADMIN_LIST:
             from utils.keyboards import approval_kb
             request_text = (
                 f"🔔 {format_bold('YANGI AVANS SO\'ROVI')}\n"
@@ -137,11 +144,16 @@ async def process_advance_request(message: Message, state: FSMContext):
                 f"📅 <b>Vaqt:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}"
             )
             
-            await message.bot.send_message(
-                admin_id,
-                request_text,
-                reply_markup=approval_kb(message.from_user.id, amount)
-            )
+            # Har bir adminga xabar yuborish
+            for admin_id in ADMIN_LIST:
+                try:
+                    await message.bot.send_message(
+                        admin_id,
+                        request_text,
+                        reply_markup=approval_kb(message.from_user.id, amount)
+                    )
+                except Exception as e:
+                    logging.warning(f"Admin {admin_id} ga xabar yuborib bo'lmadi: {e}")
         
         # Ishchiga tasdiqlash xabari
         success_text = (
