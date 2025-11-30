@@ -103,6 +103,9 @@ async def process_worker_rate(message: Message, state: FSMContext):
         if rate <= 0:
             await message.answer("⚠️ <b>Iltimos, 0 dan katta raqam kiriting</b>")
             return
+        
+        # XATOLIK TUZATILDI: Qiymatni state ga saqlash
+        await state.update_data(rate=rate)
             
         data = await state.get_data()
         
