@@ -17,7 +17,6 @@ router = Router()
 # --- ADMINLAR RO'YXATINI OLISH (MULTI-ADMIN) ---
 ADMIN_LIST: List[int] = []
 try:
-    # Env dan "123,456,789" formatida olib, [123, 456, 789] ro'yxatiga aylantiramiz
     env_admins = os.getenv("ADMIN_ID", "")
     ADMIN_LIST = [int(id_str.strip()) for id_str in env_admins.split(",") if id_str.strip()]
 except (ValueError, TypeError):
@@ -501,14 +500,36 @@ async def reject_advance_request(call: CallbackQuery):
     except Exception as e:
         logging.error(f"Reject advance error: {e}")
 
-# --- SOZLAMALAR MENYUSI HANDLERLARI ---
+# --- SOZLAMALAR MENYUSI HANDLERLARI (YANGILANDI) ---
 @router.callback_query(F.data == "stats")
 async def show_stats_callback(call: CallbackQuery, state: FSMContext):
-    # Statistika tugmasi bosilganda Joriy holatni ko'rsatamiz
+    # Yangilangan statistika
     await call.message.delete()
-    # show_current_status funksiyasini chaqiramiz (message o'rniga call ni moslab jo'natamiz)
-    # Bu yerda call.message ni jo'natamiz, funksiya ichida tekshiruv qo'shdik
-    await show_current_status(call.message, state)
+    
+    stats = await db.get_general_statistics()
+    now = get_current_time()
+    month_name = MONTHS.get(now.month, str(now.month))
+    
+    if not stats:
+        await call.message.answer("❌ Statistika ma'lumotlari topilmadi", reply_markup=admin_main_kb())
+        return
+
+    top_text = "Hozircha yo'q"
+    if stats.get('top_worker'):
+        top_text = f"{stats['top_worker']['name']} ({stats['top_worker']['hours']} soat)"
+
+    text = (
+        f"📊 {format_bold('UMUMIY STATISTIKA')}\n"
+        f"🗓 {month_name} {now.year}\n"
+        f"────────────────\n\n"
+        f"👥 <b>Jami ishchilar:</b> {stats.get('workers', 0)}\n"
+        f"⏱ <b>Jami ishlangan soat:</b> {stats.get('hours', 0)}\n"
+        f"💸 <b>To'langan avanslar:</b> {stats.get('advance', 0):,.0f} so'm\n\n"
+        f"🏆 <b>Oy ilg'ori (Top ishchi):</b>\n"
+        f"⭐️ {top_text}"
+    )
+    
+    await call.message.answer(text, reply_markup=admin_main_kb())
 
 @router.callback_query(F.data == "edit_worker")
 async def start_edit_worker(call: CallbackQuery, state: FSMContext):
