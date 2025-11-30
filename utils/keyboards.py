@@ -54,7 +54,7 @@ edit_options_kb = InlineKeyboardMarkup(
     inline_keyboard=[
         [InlineKeyboardButton(text="👤 Ism", callback_data="edit_name")],
         [InlineKeyboardButton(text="💵 Soatlik narx", callback_data="edit_rate")],
-        [InlineKeyboardButton(text="📍 Ish joyi", callback_data="edit_location")],
+        # Location olib tashlandi
         [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_edit")]
     ]
 )

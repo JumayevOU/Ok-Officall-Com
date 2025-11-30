@@ -41,15 +41,15 @@ MONTHS_UZ = {
 def generate_report(year: int, month: int, workers_data: List[Dict], 
                    attendance_data: Dict, advances_data: Dict) -> str:
     """
-    Excel hisobot yaratish
+    Excel hisobot yaratish (location siz)
     """
     try:
         wb = Workbook()
         ws = wb.active
         ws.title = f"{month:02d}-{year}"
         
-        # Ma'lumotlarni saralash
-        workers_data.sort(key=lambda x: (x.get('location', 'ZZZZ'), x['name']))
+        # Ma'lumotlarni saralash (faqat ism bo'yicha)
+        workers_data.sort(key=lambda x: x['name'])
         
         num_days = calendar.monthrange(year, month)[1]
         styles = ExcelStyles()
@@ -110,40 +110,18 @@ def _create_header(ws, year, month, num_days, styles):
 
 def _add_worker_data(ws, workers_data, attendance_data, advances_data, 
                     year, month, num_days, styles):
-    """Ishchi ma'lumotlarini qo'shish"""
+    """Ishchi ma'lumotlarini qo'shish (location siz)"""
     current_row = 3
-    last_location = None
     
     for idx, worker in enumerate(workers_data, 1):
-        current_loc = worker.get('location', 'Umumiy') or 'Umumiy'
-        
-        # BLOK AJRATUVCHI
-        if current_loc != last_location:
-            _add_block_header(ws, current_row, current_loc, num_days, styles)
-            current_row += 1
-            last_location = current_loc
-        
         # ISHCHI QATORI
         _add_worker_row(ws, current_row, idx, worker, attendance_data, 
                        advances_data, year, month, num_days, styles)
         current_row += 1
 
-def _add_block_header(ws, row, location, num_days, styles):
-    """Blok sarlavhasini qo'shish"""
-    total_cols = 2 + num_days + 5
-    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=total_cols)
-    cell = ws.cell(row, 1, f"🏢 {location.upper()} BLOK")
-    cell.font = styles.BOLD_FONT
-    cell.fill = styles.BLOCK_FILL
-    cell.alignment = styles.CENTER_ALIGN
-    
-    # Chegaralarni qo'shish
-    for col in range(1, total_cols + 1):
-        ws.cell(row, col).border = styles.THIN_BORDER
-
 def _add_worker_row(ws, row, counter, worker, attendance_data, advances_data,
                    year, month, num_days, styles):
-    """Ishchi qatorini qo'shish"""
+    """Ishchi qatorini qo'shish (location siz)"""
     # № va Ism
     ws.cell(row, 1, counter).border = styles.THIN_BORDER
     ws.cell(row, 1).alignment = styles.CENTER_ALIGN
@@ -154,12 +132,19 @@ def _add_worker_row(ws, row, counter, worker, attendance_data, advances_data,
     
     # DAVOMAT KUNLARI
     total_hours = 0
-    created_at = worker['created_at']
-    archived_at = worker['archived_at']
     
-    if isinstance(created_at, datetime):
+    # created_at va archived_at ni xavfsiz olish
+    created_at = worker.get('created_at')
+    archived_at = worker.get('archived_at')
+    
+    # Agar created_at bo'lmasa, oyning birinchi kuni deb olamiz
+    if created_at is None:
+        created_at = date(year, month, 1)
+    elif isinstance(created_at, datetime):
         created_at = created_at.date()
-    if isinstance(archived_at, datetime):
+    
+    # Agar archived_at bo'lmasa, None qoldiramiz
+    if archived_at and isinstance(archived_at, datetime):
         archived_at = archived_at.date()
     
     for day in range(1, num_days + 1):

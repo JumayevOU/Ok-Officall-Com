@@ -38,8 +38,8 @@ async def execute_query(query: str, *args) -> Any:
         await conn.close()
 
 # --- ISHCHILAR BO'LIMI ---
-async def add_worker(name: str, rate: float, code: int, location: str = "Umumiy") -> bool:
-    """Yangi ishchi qo'shish"""
+async def add_worker(name: str, rate: float, code: int) -> bool:
+    """Yangi ishchi qo'shish (location siz)"""
     try:
         # Kod takrorlanmasligini tekshirish
         conn = await get_db()
@@ -50,8 +50,8 @@ async def add_worker(name: str, rate: float, code: int, location: str = "Umumiy"
             return False
         
         await conn.execute(
-            "INSERT INTO workers (name, rate, code, location, active) VALUES ($1, $2, $3, $4, $5)", 
-            name.strip(), float(rate), int(code), location.strip(), True
+            "INSERT INTO workers (name, rate, code, active) VALUES ($1, $2, $3, $4)", 
+            name.strip(), float(rate), int(code), True
         )
         await conn.close()
         return True
@@ -64,8 +64,8 @@ async def add_worker(name: str, rate: float, code: int, location: str = "Umumiy"
         return False
 
 async def update_worker_field(worker_id: int, field: str, value: Any) -> bool:
-    """Ishchi ma'lumotlarini yangilash"""
-    valid_fields = ['name', 'rate', 'location']
+    """Ishchi ma'lumotlarini yangilash (faqat name va rate)"""
+    valid_fields = ['name', 'rate']  # location olib tashlandi
     if field not in valid_fields:
         return False
     
@@ -89,13 +89,13 @@ async def archive_worker(worker_id: int) -> bool:
         return False
 
 async def get_active_workers() -> List[Dict[str, Any]]:
-    """Faol ishchilar ro'yxati"""
+    """Faol ishchilar ro'yxati (location siz)"""
     try:
         rows = await execute_query("""
-            SELECT id, name, rate, COALESCE(location, 'Umumiy') as location 
+            SELECT id, name, rate
             FROM workers 
             WHERE active = TRUE 
-            ORDER BY location, name
+            ORDER BY name
         """)
         return [dict(row) for row in rows]
     except Exception as e:
@@ -103,10 +103,10 @@ async def get_active_workers() -> List[Dict[str, Any]]:
         return []
 
 async def search_worker_by_name(search_text: str) -> List[Dict[str, Any]]:
-    """Ism bo'yicha ishchi qidirish"""
+    """Ism bo'yicha ishchi qidirish (location siz)"""
     try:
         rows = await execute_query("""
-            SELECT id, name, location 
+            SELECT id, name
             FROM workers 
             WHERE active = TRUE AND name ILIKE $1
             ORDER BY name
@@ -175,6 +175,57 @@ async def get_month_data(year: int, month: int) -> tuple:
         logging.error(f"get_month_data xatosi: {e}")
         return [], []
 
+# --- HISOBOT FUNKSIYALARI ---
+async def get_workers_for_report(year: int, month: int) -> List[Dict[str, Any]]:
+    """Hisobot uchun ishchilar ro'yxati (location siz)"""
+    try:
+        # Oyning oxirgi kunini hisoblash
+        last_day = calendar.monthrange(year, month)[1]
+        start_date = date(year, month, 1)
+        end_date = date(year, month, last_day)
+        
+        rows = await execute_query("""
+            SELECT id, name, rate, created_at, archived_at 
+            FROM workers 
+            WHERE created_at <= $2 
+              AND (archived_at IS NULL OR archived_at >= $1)
+            ORDER BY name
+        """, start_date, end_date)
+        
+        return [dict(row) for row in rows]
+    except Exception as e:
+        logging.error(f"get_workers_for_report xatosi: {e}")
+        return []
+
+async def get_month_attendance(year: int, month: int):
+    """Oy davomati ma'lumotlari"""
+    try:
+        date_filter = f"{year}-{month:02d}"
+        rows = await execute_query("""
+            SELECT worker_id, TO_CHAR(date, 'YYYY-MM-DD') as date_str, hours 
+            FROM attendance 
+            WHERE TO_CHAR(date, 'YYYY-MM') = $1
+        """, date_filter)
+        return rows
+    except Exception as e:
+        logging.error(f"get_month_attendance xatosi: {e}")
+        return []
+
+async def get_month_advances(year: int, month: int):
+    """Oy avanslari ma'lumotlari"""
+    try:
+        date_filter = f"{year}-{month:02d}"
+        rows = await execute_query("""
+            SELECT worker_id, SUM(amount) as total 
+            FROM advances 
+            WHERE TO_CHAR(date, 'YYYY-MM') = $1 AND approved = TRUE
+            GROUP BY worker_id
+        """, date_filter)
+        return rows
+    except Exception as e:
+        logging.error(f"get_month_advances xatosi: {e}")
+        return []
+
 # --- AUTENTIFIKATSIYA ---
 async def verify_login(code: str, telegram_id: int) -> tuple:
     """Login tekshirish"""
@@ -223,7 +274,7 @@ async def get_worker_stats(telegram_id: int) -> Optional[Dict[str, Any]]:
         """, worker['id'], month)
         
         advance_data = await execute_query("""
-            SELECT COALESCE(SUM(amount), 0) as total_advance 
+            SELECT COALESCESUM(amount), 0) as total_advance 
             FROM advances 
             WHERE worker_id = $1 AND TO_CHAR(date, 'YYYY-MM') = $2 AND approved = TRUE
         """, worker['id'], month)

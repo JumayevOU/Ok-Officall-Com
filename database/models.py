@@ -35,7 +35,7 @@ async def create_tables():
 
     try:
         async with DB_POOL.acquire() as conn:
-            # 1. Ishchilar jadvali
+            # 1. Ishchilar jadvali (location ustunisiz)
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS workers(
                     id SERIAL PRIMARY KEY,
@@ -43,7 +43,6 @@ async def create_tables():
                     rate DECIMAL(10,2) NOT NULL,
                     code INTEGER UNIQUE NOT NULL,
                     telegram_id BIGINT UNIQUE,
-                    location TEXT DEFAULT 'Umumiy',
                     active BOOLEAN DEFAULT TRUE,
                     created_at DATE DEFAULT CURRENT_DATE,
                     archived_at DATE DEFAULT NULL
@@ -72,6 +71,12 @@ async def create_tables():
                     approved BOOLEAN DEFAULT TRUE
                 )
             """)
+
+            # location ustunini olib tashlash (agar mavjud bo'lsa)
+            try:
+                await conn.execute("ALTER TABLE workers DROP COLUMN IF EXISTS location")
+            except Exception as e:
+                logging.warning(f"Location ustunini o'chirishda xato: {e}")
 
             # Indexlar
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_workers_telegram ON workers(telegram_id)")

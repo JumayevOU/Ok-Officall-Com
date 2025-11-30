@@ -3,7 +3,7 @@ from aiogram.fsm.state import State, StatesGroup
 class AddWorker(StatesGroup):
     name = State()
     rate = State()
-    location = State()
+    # Location olib tashlandi
 
 class EditWorker(StatesGroup):
     waiting_id = State()

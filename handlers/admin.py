@@ -104,40 +104,16 @@ async def process_worker_rate(message: Message, state: FSMContext):
             await message.answer("⚠️ <b>Iltimos, 0 dan katta raqam kiriting</b>")
             return
             
-        await state.update_data(rate=rate)
-        await state.set_state(AddWorker.location)
+        data = await state.get_data()
         
-        prompt_text = (
-            f"📍 {format_bold('ISH JOYI')}\n"
-            f"────────────────\n\n"
-            f"🏢 <b>Ishchi qaysi bo'limda ishlaydi?</b>\n\n"
-            f"<i>Masalan: A Blok, H Blok, Ofis...</i>"
-        )
-        await message.answer(prompt_text, reply_markup=cancel_kb)
-        
-    except ValueError:
-        await message.answer("⚠️ <b>Iltimos, faqat raqam kiriting!</b>")
-
-@router.message(AddWorker.location)
-async def process_worker_location(message: Message, state: FSMContext):
-    """Ishchi lokatsiyasini qabul qilish"""
-    if message.text == "❌ Bekor qilish":
-        await state.clear()
-        await message.answer("✅ Amal bekor qilindi", reply_markup=admin_main_kb())
-        return
-    
-    location = message.text.strip() or "Umumiy"
-    data = await state.get_data()
-    
-    try:
         # Takrorlanmas kod generatsiya qilish
         code = generate_unique_code()
         
-        # Database ga yozish
+        # Database ga yozish (location siz)
         conn = await asyncpg.connect(os.getenv("DATABASE_URL"))
         await conn.execute(
-            "INSERT INTO workers (name, rate, code, location, active) VALUES ($1, $2, $3, $4, $5)", 
-            data['name'], data['rate'], code, location, True
+            "INSERT INTO workers (name, rate, code, active) VALUES ($1, $2, $3, $4)", 
+            data['name'], data['rate'], code, True
         )
         await conn.close()
         
@@ -145,7 +121,6 @@ async def process_worker_location(message: Message, state: FSMContext):
             f"✅ {format_bold('MUVAFFAQIYATLI QO\'SHILDI')}\n"
             f"────────────────\n\n"
             f"👤 <b>Ishchi:</b> {data['name']}\n"
-            f"📍 <b>Joyi:</b> {location}\n"
             f"💵 <b>Soatlik:</b> {data['rate']:,.0f} so'm\n"
             f"🔑 <b>Kirish kodi:</b> <code>{code}</code>\n\n"
             f"📝 <i>Bu kodni ishchiga bering, u botga kirishi uchun kerak.</i>"
@@ -220,8 +195,8 @@ async def process_edit_field(call: CallbackQuery, state: FSMContext):
     """Tahrirlash maydonini qabul qilish"""
     field_map = {
         "edit_name": "name",
-        "edit_rate": "rate", 
-        "edit_location": "location"
+        "edit_rate": "rate",
+        # "edit_location" olib tashlandi
     }
     
     field = field_map.get(call.data)
@@ -235,7 +210,7 @@ async def process_edit_field(call: CallbackQuery, state: FSMContext):
     prompts = {
         "name": "✍️ <b>Yangi ismni kiriting:</b>",
         "rate": "💵 <b>Yangi soatlik narxni kiriting (faqat raqam):</b>",
-        "location": "📍 <b>Yangi ish joyini kiriting:</b>"
+        # "location" olib tashlandi
     }
     
     await call.message.edit_text(prompts[field])
@@ -340,7 +315,7 @@ async def process_delete_worker(message: Message, state: FSMContext):
 # --- ISHCHILAR RO'YXATI ---
 @router.message(F.text == "👥 Ishchilar")
 async def show_workers_list(message: Message):
-    """Ishchilar ro'yxatini ko'rsatish"""
+    """Ishchilar ro'yxatini ko'rsatish (location siz)"""
     if message.from_user.id != ADMIN_ID:
         return
     
@@ -354,14 +329,7 @@ async def show_workers_list(message: Message):
     if not workers:
         list_text += "<i>🤷 Hozircha ishchilar ro'yxati bo'sh</i>"
     else:
-        current_location = None
         for worker in workers:
-            location = worker.get('location', 'Umumiy')
-            
-            if location != current_location:
-                list_text += f"\n🏢 <b>{location}</b>\n"
-                current_location = location
-            
             list_text += (
                 f"🆔 <code>{worker['id']}</code> | 👤 {worker['name']}\n"
                 f"   💰 {worker['rate']:,.0f} so'm/soat\n\n"
@@ -393,7 +361,7 @@ async def start_daily_report(message: Message, state: FSMContext):
     await show_next_worker(message, state)
 
 async def show_next_worker(message: Message, state: FSMContext):
-    """Keyingi ishchini ko'rsatish"""
+    """Keyingi ishchini ko'rsatish (location siz)"""
     user_data = fsm_data.get(message.from_user.id)
     if not user_data:
         await state.clear()
@@ -423,7 +391,6 @@ async def show_next_worker(message: Message, state: FSMContext):
         f"⏱ {format_bold('DAVOMAT KIRITISH')}\n"
         f"────────────────\n\n"
         f"👤 <b>Ishchi:</b> {worker['name']}\n"
-        f"📍 <b>Joyi:</b> {worker.get('location', 'Umumiy')}\n"
         f"📊 <b>Progress:</b> {current_index + 1}/{len(workers)}\n\n"
         f"👉 <b>Bugun necha soat ishladi?</b>\n\n"
         f"<i>Raqam kiriting (masalan: 8). Agar kelmagan bo'lsa 0 ni kiriting.</i>"
@@ -472,7 +439,7 @@ async def process_worker_hours(message: Message, state: FSMContext):
 # --- JORIY HOLAT ---
 @router.message(F.text == "📊 Joriy holat")
 async def show_current_status(message: Message):
-    """Joriy oy holatini ko'rsatish"""
+    """Joriy oy holatini ko'rsatish (location siz)"""
     if message.from_user.id != ADMIN_ID:
         return
     
@@ -507,14 +474,8 @@ async def show_current_status(message: Message):
         status_text += "<i>🤷 Hozircha ma'lumot yo'q</i>"
     else:
         total_salary = 0
-        current_location = None
         
         for worker in workers:
-            location = worker.get('location', 'Umumiy')
-            if location != current_location:
-                status_text += f"\n🏢 <b>{location}</b>\n"
-                current_location = location
-            
             # Soatlarni hisoblash
             total_hours = attendance_dict.get(worker['id'], 0)
             
@@ -539,7 +500,7 @@ async def show_current_status(message: Message):
 # --- EXCEL HISOBOT ---
 @router.message(F.text == "📥 Excel hisobot")
 async def generate_excel_report(message: Message):
-    """Excel hisobot yaratish"""
+    """Excel hisobot yaratish (location siz)"""
     if message.from_user.id != ADMIN_ID:
         return
     
@@ -547,8 +508,11 @@ async def generate_excel_report(message: Message):
     
     try:
         now = datetime.now()
-        workers = await db.get_active_workers()
-        attendance, advances = await db.get_month_data(now.year, now.month)
+        
+        # Yangi funksiyalar orqali ma'lumotlarni olish
+        workers = await db.get_workers_for_report(now.year, now.month)
+        attendance = await db.get_month_attendance(now.year, now.month)
+        advances = await db.get_month_advances(now.year, now.month)
         
         if not workers:
             await processing_msg.delete()
@@ -586,6 +550,7 @@ async def generate_excel_report(message: Message):
         )
         
         # Vaqtinchalik faylni o'chirish
+        import os
         os.remove(filename)
         
     except Exception as e:
@@ -602,7 +567,7 @@ async def generate_excel_report(message: Message):
 # --- AVANS YOZISH ---
 @router.message(F.text == "💰 Avans yozish")
 async def start_admin_advance(message: Message, state: FSMContext):
-    """Admin tomonidan avans yozish"""
+    """Admin tomonidan avans yozish (location siz)"""
     if message.from_user.id != ADMIN_ID:
         return
     
@@ -620,7 +585,7 @@ async def start_admin_advance(message: Message, state: FSMContext):
 
 @router.message(AdminAdvance.select_worker)
 async def process_worker_selection(message: Message, state: FSMContext):
-    """Ishchi tanlash"""
+    """Ishchi tanlash (location siz)"""
     if message.text == "❌ Bekor qilish":
         await state.clear()
         await message.answer("✅ Amal bekor qilindi", reply_markup=admin_main_kb())
@@ -636,15 +601,13 @@ async def process_worker_selection(message: Message, state: FSMContext):
         if worker and worker['active']:
             await state.update_data(
                 worker_id=worker['id'], 
-                worker_name=worker['name'],
-                worker_location=worker.get('location', 'Umumiy')
+                worker_name=worker['name']
             )
             await state.set_state(AdminAdvance.enter_amount)
             
             prompt_text = (
                 f"✅ <b>Ishchi topildi:</b>\n"
-                f"👤 {worker['name']}\n"
-                f"📍 {worker.get('location', 'Umumiy')}\n\n"
+                f"👤 {worker['name']}\n\n"
                 f"💸 <b>Qancha avans bermoqchisiz?</b>\n\n"
                 f"<i>Faqat raqam kiriting (so'mda). Masalan: 500000</i>"
             )
@@ -675,15 +638,13 @@ async def process_worker_selection(message: Message, state: FSMContext):
         worker = workers[0]
         await state.update_data(
             worker_id=worker['id'], 
-            worker_name=worker['name'],
-            worker_location=worker.get('location', 'Umumiy')
+            worker_name=worker['name']
         )
         await state.set_state(AdminAdvance.enter_amount)
         
         prompt_text = (
             f"✅ <b>Ishchi topildi:</b>\n"
-            f"👤 {worker['name']}\n"
-            f"📍 {worker.get('location', 'Umumiy')}\n\n"
+            f"👤 {worker['name']}\n\n"
             f"💸 <b>Qancha avans bermoqchisiz?</b>"
         )
         await message.answer(prompt_text, reply_markup=cancel_kb)
@@ -693,7 +654,7 @@ async def process_worker_selection(message: Message, state: FSMContext):
             f"🔍 <b>Bir nechta ishchi topildi:</b>\n\n"
         )
         for worker in workers:
-            workers_text += f"🆔 <code>{worker['id']}</code> - {worker['name']} ({worker.get('location', 'Umumiy')})\n"
+            workers_text += f"🆔 <code>{worker['id']}</code> - {worker['name']}\n"
         
         workers_text += (
             f"\n📝 <b>Iltimos, kerakli ishchining ID raqamini kiriting:</b>"
@@ -726,7 +687,6 @@ async def process_advance_amount(message: Message, state: FSMContext):
                 f"✅ {format_bold('AVANS MUVAFFAQIYATLI YOZILDI')}\n"
                 f"────────────────\n\n"
                 f"👤 <b>Ishchi:</b> {data['worker_name']}\n"
-                f"📍 <b>Joyi:</b> {data.get('worker_location', 'Umumiy')}\n"
                 f"💰 <b>Miqdor:</b> {amount:,.0f} so'm\n"
                 f"📅 <b>Sana:</b> {datetime.now().strftime('%d.%m.%Y')}"
             )
