@@ -103,42 +103,36 @@ async def process_worker_rate(message: Message, state: FSMContext):
         if rate <= 0:
             await message.answer("⚠️ <b>Iltimos, 0 dan katta raqam kiriting</b>")
             return
-        
-        # XATOLIK TUZATILDI: Qiymatni state ga saqlash
-        await state.update_data(rate=rate)
             
         data = await state.get_data()
+        name = data['name']
         
         # Takrorlanmas kod generatsiya qilish
         code = generate_unique_code()
         
-        # Database ga yozish (location siz)
-        conn = await asyncpg.connect(os.getenv("DATABASE_URL"))
-        await conn.execute(
-            "INSERT INTO workers (name, rate, code, active) VALUES ($1, $2, $3, $4)", 
-            data['name'], data['rate'], code, True
-        )
-        await conn.close()
+        # Database ga yozish (To'g'irlangan qism)
+        # requests.py dagi tayyor funksiyadan foydalanamiz
+        success = await db.add_worker(name, rate, code)
         
-        success_text = (
-            f"✅ {format_bold('MUVAFFAQIYATLI QO\'SHILDI')}\n"
-            f"────────────────\n\n"
-            f"👤 <b>Ishchi:</b> {data['name']}\n"
-            f"💵 <b>Soatlik:</b> {data['rate']:,.0f} so'm\n"
-            f"🔑 <b>Kirish kodi:</b> <code>{code}</code>\n\n"
-            f"📝 <i>Bu kodni ishchiga bering, u botga kirishi uchun kerak.</i>"
-        )
-        await message.answer(success_text, reply_markup=admin_main_kb())
+        if success:
+            success_text = (
+                f"✅ {format_bold('MUVAFFAQIYATLI QO\'SHILDI')}\n"
+                f"────────────────\n\n"
+                f"👤 <b>Ishchi:</b> {name}\n"
+                f"💵 <b>Soatlik:</b> {rate:,.0f} so'm\n"
+                f"🔑 <b>Kirish kodi:</b> <code>{code}</code>\n\n"
+                f"📝 <i>Bu kodni ishchiga bering, u botga kirishi uchun kerak.</i>"
+            )
+            await message.answer(success_text, reply_markup=admin_main_kb())
+        else:
+            await message.answer("❌ <b>Xatolik!</b> Kod takrorlandi yoki baza xatosi.", reply_markup=admin_main_kb())
         
     except Exception as e:
         logging.error(f"Ishchi qo'shish xatosi: {e}")
-        
         error_text = (
             f"❌ {format_bold('XATOLIK')}\n"
             f"────────────────\n\n"
             f"<b>Ishchi qo'shishda xatolik yuz berdi.</b>\n\n"
-            f"📋 <i>Xato tafsilotlari:</i>\n"
-            f"<code>{str(e)}</code>\n\n"
             f"🔄 <b>Iltimos, qayta urinib ko'ring.</b>"
         )
         await message.answer(error_text, reply_markup=admin_main_kb())
@@ -199,7 +193,6 @@ async def process_edit_field(call: CallbackQuery, state: FSMContext):
     field_map = {
         "edit_name": "name",
         "edit_rate": "rate",
-        # "edit_location" olib tashlandi
     }
     
     field = field_map.get(call.data)
@@ -213,7 +206,6 @@ async def process_edit_field(call: CallbackQuery, state: FSMContext):
     prompts = {
         "name": "✍️ <b>Yangi ismni kiriting:</b>",
         "rate": "💵 <b>Yangi soatlik narxni kiriting (faqat raqam):</b>",
-        # "location" olib tashlandi
     }
     
     await call.message.edit_text(prompts[field])
