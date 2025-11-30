@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, date
 import calendar
 from typing import List, Dict, Any, Optional
-from .models import DB_POOL
+from database import models
 
 class DatabaseError(Exception):
     """Maxsus database xatoliklari"""
