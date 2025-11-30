@@ -62,27 +62,44 @@ async def show_workers_list(message: Message, state: FSMContext):
     try:
         workers = await db.get_active_workers()
         
-        # XATOLIK TUZATILDI: RO'YXATI -> ROYXATI va qo'shtirnoqlar to'g'irlandi
-        list_text = (
+        header = (
             f"📋 {format_bold('ISHCHILAR ROYXATI')}\n"
             f"────────────────\n\n"
         )
         
         if not workers:
-            list_text += "<i>🤷 Hozircha ishchilar ro'yxati bo'sh</i>"
-        else:
-            for worker in workers:
-                # Code (parol) qo'shildi
-                list_text += (
-                    f"🆔 <b>ID:</b> <code>{worker['id']}</code>\n"
-                    f"👤 <b>Ism:</b> {worker['name']}\n"
-                    f"💰 <b>Stavka:</b> {worker['rate']:,.0f} so'm/soat\n"
-                    f"🔑 <b>KIRISH KODI:</b> <code>{worker['code']}</code>\n"
-                    f"➖➖➖➖➖➖➖➖➖➖➖\n"
-                )
+            await message.answer(header + "<i>🤷 Hozircha ishchilar ro'yxati bo'sh</i>", reply_markup=admin_main_kb())
+            return
+
+        # --- TUZATISH: Xabarni bo'laklash (Chunking) ---
+        current_text = header
         
-        list_text += "\n👇 <i>O'zgartirish kiritish uchun 'Sozlamalar' menyusidan foydalaning</i>"
-        await message.answer(list_text, reply_markup=admin_main_kb())
+        for worker in workers:
+            worker_info = (
+                f"🆔 <b>ID:</b> <code>{worker['id']}</code>\n"
+                f"👤 <b>Ism:</b> {worker['name']}\n"
+                f"💰 <b>Stavka:</b> {worker['rate']:,.0f} so'm/soat\n"
+                f"🔑 <b>KIRISH KODI:</b> <code>{worker['code']}</code>\n"
+                f"➖➖➖➖➖➖➖➖➖➖➖\n"
+            )
+            
+            # Agar xabar uzunligi 4000 belgidan oshsa, jo'natamiz va yangisini boshlaymiz
+            if len(current_text) + len(worker_info) > 4000:
+                await message.answer(current_text)
+                current_text = "" # Bo'shatish
+            
+            current_text += worker_info
+        
+        # Oxirgi qismni va footer ni qo'shib jo'natamiz
+        footer = "\n👇 <i>O'zgartirish kiritish uchun 'Sozlamalar' menyusidan foydalaning</i>"
+        
+        if len(current_text) + len(footer) > 4000:
+             await message.answer(current_text)
+             await message.answer(footer, reply_markup=admin_main_kb())
+        else:
+             current_text += footer
+             await message.answer(current_text, reply_markup=admin_main_kb())
+
     except Exception as e:
         logging.error(f"Ishchilar ro'yxatida xato: {e}")
         await message.answer("❌ <b>Ma'lumotlar bazasidan o'qishda xatolik bo'ldi.</b>")
@@ -110,39 +127,54 @@ async def show_current_status(message: Message, state: FSMContext):
             total = record['total']
             advances_dict[worker_id] = total
         
-        status_text = (
+        header = (
             f"📊 {format_bold('JORIY HOLAT')}\n"
             f"🗓 {now.strftime('%B %Y')}\n"
             f"────────────────\n\n"
         )
         
         if not workers:
-            status_text += "<i>🤷 Hozircha ma'lumot yo'q</i>"
-        else:
-            total_salary = 0
-            
-            for worker in workers:
-                total_hours = attendance_dict.get(worker['id'], 0)
-                advance = advances_dict.get(worker['id'], 0)
-                salary = total_hours * float(worker['rate'])
-                net_salary = salary - float(advance)
-                
-                total_salary += net_salary
-                
-                status_text += (
-                    f"👤 {worker['name']}\n"
-                    f"⏱ {total_hours} soat | "
-                    f"💸 {advance:,.0f} so'm avans\n"
-                    f"💰 <b>{net_salary:,.0f} so'm</b>\n\n"
-                )
-            
-            status_text += f"💵 <b>JAMI KASSA: {total_salary:,.0f} so'm</b>"
+            await message.answer(header + "<i>🤷 Hozircha ma'lumot yo'q</i>", reply_markup=admin_main_kb())
+            return
+
+        # --- TUZATISH: Xabarni bo'laklash ---
+        current_text = header
+        total_salary = 0
         
-        # Agar callback orqali chaqirilgan bo'lsa (Statistika tugmasi)
-        if isinstance(message, CallbackQuery):
-             await message.message.answer(status_text, reply_markup=admin_main_kb())
+        for worker in workers:
+            total_hours = attendance_dict.get(worker['id'], 0)
+            advance = advances_dict.get(worker['id'], 0)
+            salary = total_hours * float(worker['rate'])
+            net_salary = salary - float(advance)
+            
+            total_salary += net_salary
+            
+            worker_info = (
+                f"👤 {worker['name']}\n"
+                f"⏱ {total_hours} soat | "
+                f"💸 {advance:,.0f} so'm avans\n"
+                f"💰 <b>{net_salary:,.0f} so'm</b>\n\n"
+            )
+            
+            if len(current_text) + len(worker_info) > 4000:
+                await message.answer(current_text)
+                current_text = ""
+            
+            current_text += worker_info
+            
+        footer = f"💵 <b>JAMI KASSA: {total_salary:,.0f} so'm</b>"
+        
+        if len(current_text) + len(footer) > 4000:
+            await message.answer(current_text)
+            final_msg = footer
         else:
-             await message.answer(status_text, reply_markup=admin_main_kb())
+            final_msg = current_text + footer
+        
+        # Agar callback orqali chaqirilgan bo'lsa
+        if isinstance(message, CallbackQuery):
+             await message.message.answer(final_msg, reply_markup=admin_main_kb())
+        else:
+             await message.answer(final_msg, reply_markup=admin_main_kb())
 
     except Exception as e:
         logging.error(f"Status xatosi: {e}")
@@ -214,7 +246,6 @@ async def start_add_worker(call: CallbackQuery, state: FSMContext):
     await call.message.delete()
     await state.set_state(AddWorker.name)
     
-    # XATOLIK TUZATILDI: QO'SHISH -> QOSHISH va qo'shtirnoqlar to'g'irlandi
     prompt_text = (
         f"👤 {format_bold('YANGI ISHCHI QOSHISH')}\n"
         f"────────────────\n\n"
