@@ -62,9 +62,9 @@ async def show_workers_list(message: Message, state: FSMContext):
     try:
         workers = await db.get_active_workers()
         
-        # XATOLIK DUZATILDI: Qo'shtirnoqlar almashtirildi
+        # XATOLIK TUZATILDI: RO'YXATI -> ROYXATI va qo'shtirnoqlar to'g'irlandi
         list_text = (
-            f"📋 {format_bold(\"ISHCHILAR RO'YXATI\")}\n"
+            f"📋 {format_bold('ISHCHILAR ROYXATI')}\n"
             f"────────────────\n\n"
         )
         
@@ -214,9 +214,9 @@ async def start_add_worker(call: CallbackQuery, state: FSMContext):
     await call.message.delete()
     await state.set_state(AddWorker.name)
     
-    # XATOLIK DUZATILDI: Qo'shtirnoqlar almashtirildi
+    # XATOLIK TUZATILDI: QO'SHISH -> QOSHISH va qo'shtirnoqlar to'g'irlandi
     prompt_text = (
-        f"👤 {format_bold(\"YANGI ISHCHI QO'SHISH\")}\n"
+        f"👤 {format_bold('YANGI ISHCHI QOSHISH')}\n"
         f"────────────────\n\n"
         f"✍️ <b>Yangi ishchining to'liq ism-familiyasini kiriting:</b>\n"
         f"<i>Masalan: Aliyev Valijon</i>"
