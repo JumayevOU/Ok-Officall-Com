@@ -10,16 +10,18 @@ import os
 import random
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 router = Router()
 
-# Admin ID ni olish va tekshirish
+# --- ADMINLAR RO'YXATINI OLISH (MULTI-ADMIN) ---
+ADMIN_LIST: List[int] = []
 try:
-    ADMIN_ID = int(os.getenv("ADMIN_ID"))
+    # Env dan "123,456,789" formatida olib, [123, 456, 789] ro'yxatiga aylantiramiz
+    env_admins = os.getenv("ADMIN_ID", "")
+    ADMIN_LIST = [int(id_str.strip()) for id_str in env_admins.split(",") if id_str.strip()]
 except (ValueError, TypeError):
-    ADMIN_ID = 0
-    logging.critical("❌ ADMIN_ID .env faylida noto'g'ri ko'rsatilgan yoki mavjud emas!")
+    logging.critical("❌ ADMIN_ID .env faylida noto'g'ri ko'rsatilgan! Format: ID1,ID2,ID3")
 
 # FSM ma'lumotlari
 fsm_data: Dict[int, Dict[str, Any]] = {}
@@ -42,12 +44,18 @@ def get_current_time():
     """O'zbekiston vaqtini olish (UTC+5)"""
     return datetime.utcnow() + timedelta(hours=5)
 
-# --- TEKSHIRUV FUNKSIYASI ---
+# --- TEKSHIRUV FUNKSIYASI (MULTI-ADMIN) ---
 async def is_admin(user_id: int, message: Message = None):
-    if user_id == ADMIN_ID:
+    # Agar user_id ADMIN_LIST ichida bo'lsa, ruxsat beramiz
+    if user_id in ADMIN_LIST:
         return True
+    
     if message:
-        await message.answer(f"⚠️ <b>Ruxsat yo'q!</b>\n\nSizning ID: <code>{user_id}</code>\nAdmin ID: <code>{ADMIN_ID}</code>\n\n<i>Iltimos, .env faylini tekshiring.</i>")
+        await message.answer(
+            f"⚠️ <b>Ruxsat yo'q!</b>\n\n"
+            f"Sizning ID: <code>{user_id}</code>\n"
+            f"<i>Ushbu ID adminlar ro'yxatida yo'q.</i>"
+        )
     return False
 
 # --- ASOSIY MENYU HANDLERLARI ---
