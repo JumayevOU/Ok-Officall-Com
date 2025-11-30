@@ -72,11 +72,15 @@ async def create_tables():
                 )
             """)
 
-            # location ustunini olib tashlash (agar mavjud bo'lsa)
+            # --- MIGRATIONS (Jadvallar yangilanishi) ---
             try:
+                # Agar advances jadvali eski bo'lsa, approved ustunini qo'shamiz
+                await conn.execute("ALTER TABLE advances ADD COLUMN IF NOT EXISTS approved BOOLEAN DEFAULT TRUE")
+                
+                # Agar workers jadvalida location qolib ketgan bo'lsa, olib tashlaymiz
                 await conn.execute("ALTER TABLE workers DROP COLUMN IF EXISTS location")
             except Exception as e:
-                logging.warning(f"Location ustunini o'chirishda xato: {e}")
+                logging.warning(f"Migration warning: {e}")
 
             # Indexlar
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_workers_telegram ON workers(telegram_id)")
