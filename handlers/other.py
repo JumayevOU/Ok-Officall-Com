@@ -7,15 +7,16 @@ from utils.states import WorkerLogin
 from database import requests as db
 import os
 import logging
-from typing import Dict
+from typing import Dict, List
 
 router = Router()
 
-# Admin ID ni tekshirish
+# --- ADMINLAR RO'YXATINI OLISH (MULTI-ADMIN) ---
+ADMIN_LIST: List[int] = []
 try:
-    ADMIN_ID = int(os.getenv("ADMIN_ID"))
+    env_admins = os.getenv("ADMIN_ID", "")
+    ADMIN_LIST = [int(id_str.strip()) for id_str in env_admins.split(",") if id_str.strip()]
 except (ValueError, TypeError):
-    ADMIN_ID = 0
     logging.warning("ADMIN_ID to'g'ri o'rnatilmagan")
 
 # Login urinishlari
@@ -38,8 +39,8 @@ async def cmd_start(message: Message, state: FSMContext):
     if user_id in login_attempts:
         del login_attempts[user_id]
     
-    # Admin tekshiruvi
-    if user_id == ADMIN_ID:
+    # Admin tekshiruvi (Multi-Admin)
+    if user_id in ADMIN_LIST:
         welcome_text = (
             f"👑 {format_bold('ADMIN PANELI')}\n\n"
             f"🛠️ <b>Boshqaruv paneliga xush kelibsiz!</b>\n"
@@ -121,9 +122,13 @@ async def cancel_handler(message: Message, state: FSMContext):
     """Bekor qilish handleri - barcha state lar uchun"""
     current_state = await state.get_state()
     
+    # Admin tekshiruvi (Multi-Admin)
+    user_id = message.from_user.id
+    is_admin_user = user_id in ADMIN_LIST
+
     if current_state is None:
         # Agar state bo'lmasa, oddiy menyuni ko'rsatish
-        if message.from_user.id == ADMIN_ID:
+        if is_admin_user:
             await message.answer("🏠 <b>Asosiy menyu</b>", reply_markup=admin_main_kb())
         else:
             await message.answer("🏠 <b>Asosiy menyu</b>", reply_markup=worker_main_kb())
@@ -133,7 +138,7 @@ async def cancel_handler(message: Message, state: FSMContext):
     await state.clear()
     
     # Foydalanuvchi turiga qarab javob berish
-    if message.from_user.id == ADMIN_ID:
+    if is_admin_user:
         await message.answer("✅ <b>Amal bekor qilindi</b>", reply_markup=admin_main_kb())
     else:
         await message.answer("✅ <b>Amal bekor qilindi</b>", reply_markup=worker_main_kb())
