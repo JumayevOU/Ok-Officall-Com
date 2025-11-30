@@ -10,62 +10,44 @@ class DatabaseError(Exception):
     """Maxsus database xatoliklari"""
     pass
 
-async def get_db():
-    """Database ulanishini olish"""
-    try:
-        conn = await asyncpg.connect(os.getenv("DATABASE_URL"))
-        return conn
-    except Exception as e:
-        logging.error(f"Database ulanish xatosi: {e}")
-        return None
-
 async def execute_query(query: str, *args) -> Any:
-    """Umumiy so'rovni bajarish"""
-    conn = await get_db()
-    if not conn:
-        raise DatabaseError("Database ga ulanib bo'lmadi")
+    """Umumiy so'rovni bajarish - DB_POOL bilan"""
+    if not DB_POOL:
+        raise DatabaseError("Database pool mavjud emas")
     
     try:
-        if query.strip().upper().startswith('SELECT'):
-            result = await conn.fetch(query, *args)
-        else:
-            result = await conn.execute(query, *args)
-        return result
+        async with DB_POOL.acquire() as conn:
+            if query.strip().upper().startswith('SELECT'):
+                result = await conn.fetch(query, *args)
+            else:
+                result = await conn.execute(query, *args)
+            return result
     except Exception as e:
         logging.error(f"Database xatosi: {e} - So'rov: {query}")
         raise DatabaseError(f"Database xatosi: {e}")
-    finally:
-        await conn.close()
 
 # --- ISHCHILAR BO'LIMI ---
 async def add_worker(name: str, rate: float, code: int) -> bool:
-    """Yangi ishchi qo'shish (location siz)"""
+    """Yangi ishchi qo'shish"""
     try:
         # Kod takrorlanmasligini tekshirish
-        conn = await get_db()
-        existing = await conn.fetchrow("SELECT id FROM workers WHERE code = $1", code)
+        existing = await execute_query("SELECT id FROM workers WHERE code = $1", code)
         if existing:
-            await conn.close()
             logging.error(f"Kod allaqachon mavjud: {code}")
             return False
         
-        await conn.execute(
+        await execute_query(
             "INSERT INTO workers (name, rate, code, active) VALUES ($1, $2, $3, $4)", 
             name.strip(), float(rate), int(code), True
         )
-        await conn.close()
         return True
     except Exception as e:
         logging.error(f"add_worker xatosi: {e}")
-        try:
-            await conn.close()
-        except:
-            pass
         return False
 
 async def update_worker_field(worker_id: int, field: str, value: Any) -> bool:
-    """Ishchi ma'lumotlarini yangilash (faqat name va rate)"""
-    valid_fields = ['name', 'rate']  # location olib tashlandi
+    """Ishchi ma'lumotlarini yangilash"""
+    valid_fields = ['name', 'rate']
     if field not in valid_fields:
         return False
     
@@ -89,10 +71,10 @@ async def archive_worker(worker_id: int) -> bool:
         return False
 
 async def get_active_workers() -> List[Dict[str, Any]]:
-    """Faol ishchilar ro'yxati (location siz)"""
+    """Faol ishchilar ro'yxati"""
     try:
         rows = await execute_query("""
-            SELECT id, name, rate
+            SELECT id, name, rate, code
             FROM workers 
             WHERE active = TRUE 
             ORDER BY name
@@ -103,10 +85,10 @@ async def get_active_workers() -> List[Dict[str, Any]]:
         return []
 
 async def search_worker_by_name(search_text: str) -> List[Dict[str, Any]]:
-    """Ism bo'yicha ishchi qidirish (location siz)"""
+    """Ism bo'yicha ishchi qidirish"""
     try:
         rows = await execute_query("""
-            SELECT id, name
+            SELECT id, name, code
             FROM workers 
             WHERE active = TRUE AND name ILIKE $1
             ORDER BY name
@@ -123,6 +105,15 @@ async def get_worker_by_id(worker_id: int) -> Optional[Dict[str, Any]]:
         return dict(rows[0]) if rows else None
     except Exception as e:
         logging.error(f"get_worker_by_id xatosi: {e}")
+        return None
+
+async def get_worker_by_code(code: int) -> Optional[Dict[str, Any]]:
+    """Kod bo'yicha ishchi ma'lumotlari"""
+    try:
+        rows = await execute_query("SELECT * FROM workers WHERE code = $1", code)
+        return dict(rows[0]) if rows else None
+    except Exception as e:
+        logging.error(f"get_worker_by_code xatosi: {e}")
         return None
 
 # --- DAVOMAT BO'LIMI ---
@@ -177,15 +168,14 @@ async def get_month_data(year: int, month: int) -> tuple:
 
 # --- HISOBOT FUNKSIYALARI ---
 async def get_workers_for_report(year: int, month: int) -> List[Dict[str, Any]]:
-    """Hisobot uchun ishchilar ro'yxati (location siz)"""
+    """Hisobot uchun ishchilar ro'yxati"""
     try:
-        # Oyning oxirgi kunini hisoblash
         last_day = calendar.monthrange(year, month)[1]
         start_date = date(year, month, 1)
         end_date = date(year, month, last_day)
         
         rows = await execute_query("""
-            SELECT id, name, rate, created_at, archived_at 
+            SELECT id, name, rate, code, created_at, archived_at 
             FROM workers 
             WHERE created_at <= $2 
               AND (archived_at IS NULL OR archived_at >= $1)
@@ -274,7 +264,7 @@ async def get_worker_stats(telegram_id: int) -> Optional[Dict[str, Any]]:
         """, worker['id'], month)
         
         advance_data = await execute_query("""
-            SELECT COALESCESUM(amount), 0) as total_advance 
+            SELECT COALESCE(SUM(amount), 0) as total_advance 
             FROM advances 
             WHERE worker_id = $1 AND TO_CHAR(date, 'YYYY-MM') = $2 AND approved = TRUE
         """, worker['id'], month)
