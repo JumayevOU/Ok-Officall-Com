@@ -1,124 +1,214 @@
 import asyncpg
 import os
+import logging
 from datetime import datetime, date
 import calendar
+from typing import List, Dict, Any, Optional
+from .models import DB_POOL
 
-async def get_db():
-    return await asyncpg.connect(os.getenv("DATABASE_URL"))
+class DatabaseError(Exception):
+    """Maxsus database xatoliklari"""
+    pass
 
-# --- ADMIN: ISHCHILAR ---
-async def add_worker(name, rate, code, location):
-    conn = await get_db()
-    loc = location if location else "Umumiy"
-    await conn.execute(
-        "INSERT INTO workers (name, rate, code, location, active) VALUES ($1, $2, $3, $4, TRUE)", 
-        name, rate, code, loc
-    )
-    await conn.close()
-
-async def update_worker_field(worker_id, field, value):
-    conn = await get_db()
-    if field in ['name', 'rate', 'location']:
-        await conn.execute(f"UPDATE workers SET {field} = $1 WHERE id = $2", value, int(worker_id))
-    await conn.close()
-
-async def archive_worker_date(worker_id):
-    conn = await get_db()
-    today = datetime.now().date()
-    await conn.execute("UPDATE workers SET active=FALSE, archived_at=$1 WHERE id=$2", today, int(worker_id))
-    await conn.close()
-
-async def get_active_workers():
-    conn = await get_db()
-    rows = await conn.fetch("""
-        SELECT id, name, rate, COALESCE(location, 'Umumiy') as location 
-        FROM workers WHERE active=TRUE ORDER BY location, name
-    """)
-    await conn.close()
-    return [dict(row) for row in rows]
-
-# --- YANGI: ISM ORQALI QIDIRISH ---
-async def search_worker_by_name(text):
-    conn = await get_db()
-    # ILIKE - katta kichik harfga qaramay qidiradi
-    rows = await conn.fetch("""
-        SELECT id, name, location FROM workers 
-        WHERE active=TRUE AND name ILIKE $1
-    """, f"%{text}%")
-    await conn.close()
-    return [dict(row) for row in rows]
-
-async def get_worker_tg_id(worker_id):
-    conn = await get_db()
-    val = await conn.fetchval("SELECT telegram_id FROM workers WHERE id=$1", int(worker_id))
-    await conn.close()
-    return val
-
-async def get_workers_for_report(year, month):
-    conn = await get_db()
-    last_day = calendar.monthrange(year, month)[1]
-    start_date = date(year, month, 1)
-    end_date = date(year, month, last_day)
+async def execute_query(query: str, *args) -> Any:
+    """Umumiy so'rovni bajarish"""
+    if not DB_POOL:
+        raise DatabaseError("Database pool mavjud emas")
     
-    rows = await conn.fetch("""
-        SELECT id, name, rate, location, created_at, archived_at 
-        FROM workers 
-        WHERE created_at <= $2 
-          AND (archived_at IS NULL OR archived_at >= $1)
-        ORDER BY location, name
-    """, start_date, end_date)
+    try:
+        async with DB_POOL.acquire() as conn:
+            if query.strip().upper().startswith('SELECT'):
+                return await conn.fetch(query, *args)
+            else:
+                return await conn.execute(query, *args)
+    except Exception as e:
+        logging.error(f"Database xatosi: {e} - So'rov: {query}")
+        raise DatabaseError(f"Database xatosi: {e}")
+
+# --- ISHCHILAR BO'LIMI ---
+async def add_worker(name: str, rate: float, code: int, location: str = "Umumiy") -> bool:
+    """Yangi ishchi qo'shish"""
+    try:
+        await execute_query(
+            "INSERT INTO workers (name, rate, code, location) VALUES ($1, $2, $3, $4)",
+            name.strip(), float(rate), int(code), location.strip()
+        )
+        return True
+    except Exception as e:
+        logging.error(f"add_worker xatosi: {e}")
+        return False
+
+async def update_worker_field(worker_id: int, field: str, value: Any) -> bool:
+    """Ishchi ma'lumotlarini yangilash"""
+    valid_fields = ['name', 'rate', 'location']
+    if field not in valid_fields:
+        return False
     
-    await conn.close()
-    return [dict(row) for row in rows]
+    try:
+        await execute_query(f"UPDATE workers SET {field} = $1 WHERE id = $2", value, worker_id)
+        return True
+    except Exception as e:
+        logging.error(f"update_worker_field xatosi: {e}")
+        return False
 
-# --- DAVOMAT ---
-async def add_attendance(worker_id, hours, status):
-    conn = await get_db()
-    today = datetime.now().date()
-    await conn.execute("DELETE FROM attendance WHERE worker_id=$1 AND date=$2", worker_id, today)
-    await conn.execute("INSERT INTO attendance (worker_id, date, hours, status) VALUES ($1, $2, $3, $4)", worker_id, today, hours, status)
-    await conn.close()
+async def archive_worker(worker_id: int) -> bool:
+    """Ishchini arxivlash"""
+    try:
+        await execute_query(
+            "UPDATE workers SET active = FALSE, archived_at = CURRENT_DATE WHERE id = $1",
+            worker_id
+        )
+        return True
+    except Exception as e:
+        logging.error(f"archive_worker xatosi: {e}")
+        return False
 
-async def add_advance_money(worker_id, amount):
-    conn = await get_db()
-    today = datetime.now().date()
-    await conn.execute("INSERT INTO advances (worker_id, date, amount) VALUES ($1, $2, $3)", worker_id, today, amount)
-    await conn.close()
+async def get_active_workers() -> List[Dict[str, Any]]:
+    """Faol ishchilar ro'yxati"""
+    try:
+        rows = await execute_query("""
+            SELECT id, name, rate, COALESCE(location, 'Umumiy') as location 
+            FROM workers 
+            WHERE active = TRUE 
+            ORDER BY location, name
+        """)
+        return [dict(row) for row in rows]
+    except Exception as e:
+        logging.error(f"get_active_workers xatosi: {e}")
+        return []
 
-async def get_month_attendance(year, month):
-    conn = await get_db()
-    date_filter = f"{year}-{month:02d}"
-    rows = await conn.fetch("SELECT worker_id, TO_CHAR(date, 'YYYY-MM-DD') as date_str, hours FROM attendance WHERE TO_CHAR(date, 'YYYY-MM') = $1", date_filter)
-    await conn.close()
-    return rows
+async def search_worker_by_name(search_text: str) -> List[Dict[str, Any]]:
+    """Ism bo'yicha ishchi qidirish"""
+    try:
+        rows = await execute_query("""
+            SELECT id, name, location 
+            FROM workers 
+            WHERE active = TRUE AND name ILIKE $1
+            ORDER BY name
+        """, f"%{search_text.strip()}%")
+        return [dict(row) for row in rows]
+    except Exception as e:
+        logging.error(f"search_worker_by_name xatosi: {e}")
+        return []
 
-async def get_month_advances(year, month):
-    conn = await get_db()
-    date_filter = f"{year}-{month:02d}"
-    rows = await conn.fetch("SELECT worker_id, SUM(amount) as total FROM advances WHERE TO_CHAR(date, 'YYYY-MM') = $1 GROUP BY worker_id", date_filter)
-    await conn.close()
-    return rows
+async def get_worker_by_id(worker_id: int) -> Optional[Dict[str, Any]]:
+    """ID bo'yicha ishchi ma'lumotlari"""
+    try:
+        row = await execute_query("SELECT * FROM workers WHERE id = $1", worker_id)
+        return dict(row[0]) if row else None
+    except Exception as e:
+        logging.error(f"get_worker_by_id xatosi: {e}")
+        return None
 
-# --- LOGIN ---
-async def verify_login(code, telegram_id):
-    conn = await get_db()
-    worker = await conn.fetchrow("SELECT * FROM workers WHERE code=$1", int(code))
-    if worker:
-        if worker['active'] is False:
-             await conn.close(); return False, "Siz ishdan bo'shatilgansiz."
-        if worker['telegram_id'] is None or worker['telegram_id'] == telegram_id:
-            await conn.execute("UPDATE workers SET telegram_id=$1 WHERE id=$2", telegram_id, worker['id'])
-            await conn.close(); return True, worker['name']
-        else:
-            await conn.close(); return False, "Kod band!"
-    await conn.close(); return False, "Kod xato!"
+# --- DAVOMAT BO'LIMI ---
+async def add_attendance(worker_id: int, hours: float, status: str = "Keldi") -> bool:
+    """Davomat qo'shish/yangilash"""
+    try:
+        await execute_query("""
+            INSERT INTO attendance (worker_id, date, hours, status) 
+            VALUES ($1, CURRENT_DATE, $2, $3)
+            ON CONFLICT (worker_id, date) 
+            DO UPDATE SET hours = EXCLUDED.hours, status = EXCLUDED.status
+        """, worker_id, float(hours), status)
+        return True
+    except Exception as e:
+        logging.error(f"add_attendance xatosi: {e}")
+        return False
 
-async def get_worker_stats(telegram_id):
-    conn = await get_db()
-    month = datetime.now().strftime("%Y-%m")
-    worker = await conn.fetchrow("SELECT id, name, rate FROM workers WHERE telegram_id=$1", telegram_id)
-    if not worker: await conn.close(); return None
-    stats = await conn.fetchrow("SELECT SUM(hours) as total FROM attendance WHERE worker_id=$1 AND TO_CHAR(date, 'YYYY-MM')=$2", worker['id'], month)
-    adv = await conn.fetchrow("SELECT SUM(amount) as total FROM advances WHERE worker_id=$1 AND TO_CHAR(date, 'YYYY-MM')=$2", worker['id'], month)
-    await conn.close()
-    return {"name": worker['name'], "rate": worker['rate'], "hours": stats['total'] or 0, "advance": adv['total'] or 0}
+async def add_advance(worker_id: int, amount: float, approved: bool = True) -> bool:
+    """Avans qo'shish"""
+    try:
+        await execute_query(
+            "INSERT INTO advances (worker_id, date, amount, approved) VALUES ($1, CURRENT_DATE, $2, $3)",
+            worker_id, float(amount), approved
+        )
+        return True
+    except Exception as e:
+        logging.error(f"add_advance xatosi: {e}")
+        return False
+
+async def get_month_data(year: int, month: int) -> tuple:
+    """Oy ma'lumotlarini olish"""
+    try:
+        date_filter = f"{year}-{month:02d}"
+        
+        attendance = await execute_query("""
+            SELECT worker_id, TO_CHAR(date, 'YYYY-MM-DD') as date_str, hours 
+            FROM attendance 
+            WHERE TO_CHAR(date, 'YYYY-MM') = $1
+        """, date_filter)
+        
+        advances = await execute_query("""
+            SELECT worker_id, SUM(amount) as total 
+            FROM advances 
+            WHERE TO_CHAR(date, 'YYYY-MM') = $1 AND approved = TRUE
+            GROUP BY worker_id
+        """, date_filter)
+        
+        return attendance, advances
+    except Exception as e:
+        logging.error(f"get_month_data xatosi: {e}")
+        return [], []
+
+# --- AUTENTIFIKATSIYA ---
+async def verify_login(code: str, telegram_id: int) -> tuple:
+    """Login tekshirish"""
+    try:
+        if not code.isdigit():
+            return False, "Iltimos, faqat raqam kiriting"
+        
+        worker = await execute_query("SELECT * FROM workers WHERE code = $1", int(code))
+        if not worker:
+            return False, "❌ Noto'g'ri kod"
+        
+        worker = worker[0]
+        
+        if not worker['active']:
+            return False, "❌ Sizning profilingiz aktiv emas"
+        
+        if worker['telegram_id'] and worker['telegram_id'] != telegram_id:
+            return False, "❌ Bu kod allaqachon boshqa foydalanuvchi tomonidan ishlatilmoqda"
+        
+        # Telegram ID ni yangilash
+        await execute_query("UPDATE workers SET telegram_id = $1 WHERE id = $2", telegram_id, worker['id'])
+        
+        return True, worker['name']
+        
+    except Exception as e:
+        logging.error(f"verify_login xatosi: {e}")
+        return False, "❌ Tizim xatosi"
+
+async def get_worker_stats(telegram_id: int) -> Optional[Dict[str, Any]]:
+    """Ishchi statistikasi"""
+    try:
+        worker = await execute_query("""
+            SELECT id, name, rate FROM workers WHERE telegram_id = $1 AND active = TRUE
+        """, telegram_id)
+        
+        if not worker:
+            return None
+        
+        worker = worker[0]
+        month = datetime.now().strftime("%Y-%m")
+        
+        hours_data = await execute_query("""
+            SELECT COALESCE(SUM(hours), 0) as total_hours 
+            FROM attendance 
+            WHERE worker_id = $1 AND TO_CHAR(date, 'YYYY-MM') = $2
+        """, worker['id'], month)
+        
+        advance_data = await execute_query("""
+            SELECT COALESCE(SUM(amount), 0) as total_advance 
+            FROM advances 
+            WHERE worker_id = $1 AND TO_CHAR(date, 'YYYY-MM') = $2 AND approved = TRUE
+        """, worker['id'], month)
+        
+        return {
+            "name": worker['name'],
+            "rate": float(worker['rate']),
+            "hours": float(hours_data[0]['total_hours']),
+            "advance": float(advance_data[0]['total_advance'])
+        }
+    except Exception as e:
+        logging.error(f"get_worker_stats xatosi: {e}")
+        return None
