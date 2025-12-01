@@ -6,12 +6,12 @@ from utils.states import WorkerAdvance
 from database import requests as db
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List
 
 router = Router()
 
-# --- ADMINLAR RO'YXATINI OLISH (MULTI-ADMIN) ---
+# --- ADMINLAR RO'YXATI (Multi-Admin) ---
 ADMIN_LIST: List[int] = []
 try:
     env_admins = os.getenv("ADMIN_ID", "")
@@ -22,13 +22,20 @@ except (ValueError, TypeError):
 # Avans so'rovlari
 advance_requests: Dict[int, float] = {}
 
+# Oylar tarjimasi
+MONTHS = {
+    1: "Yanvar", 2: "Fevral", 3: "Mart", 4: "Aprel",
+    5: "May", 6: "Iyun", 7: "Iyul", 8: "Avgust",
+    9: "Sentabr", 10: "Oktabr", 11: "Noyabr", 12: "Dekabr"
+}
+
 def format_bold(text: str) -> str:
     """Matnni qalin qilish"""
-    bold_map = str.maketrans(
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
-        "𝐀𝐁𝐂𝐃𝐄𝐅𝐆𝐇𝐈𝐉𝐊𝐋𝐌𝐍𝐎𝐏𝐐𝐑𝐒𝐓𝐔𝐕𝐖𝐗𝐘𝐙𝐚𝐛𝐜𝐝𝐞𝐟𝐠𝐡𝐢𝐣𝐤𝐥𝐦𝐧𝐨𝐩𝐪𝐫𝐬𝐭𝐮𝐯𝐰𝐱𝐲𝐳"
-    )
-    return text.translate(bold_map)
+    return f"<b>{text}</b>"
+
+def get_tashkent_time():
+    """Toshkent vaqti (UTC+5)"""
+    return datetime.utcnow() + timedelta(hours=5)
 
 # --- SHAXSIY HISOB ---
 @router.message(F.text == "💰 Mening hisobim")
@@ -47,9 +54,12 @@ async def show_worker_stats(message: Message):
     salary = stats['hours'] * stats['rate']
     net_salary = salary - stats['advance']
     
+    now = get_tashkent_time()
+    month_name = MONTHS.get(now.month, str(now.month))
+    
     stats_text = (
         f"🧾 {format_bold('SHAXSIY HISOB')}\n"
-        f"🗓 {datetime.now().strftime('%B %Y')}\n"
+        f"🗓 {month_name} {now.year}\n"
         f"────────────────\n\n"
         f"👤 <b>{stats['name']}</b>\n"
         f"💎 <b>Soatlik stavka:</b> {stats['rate']:,.0f} so'm\n\n"
@@ -84,7 +94,7 @@ async def start_advance_request(message: Message, state: FSMContext):
     max_advance = (stats['hours'] * stats['rate']) * 0.7  # 70% chegarasi
     
     prompt_text = (
-        f"💸 {format_bold('AVANS SO\'RASH')}\n"
+        f"💸 {format_bold('AVANS SO\\'RASH')}\n"
         f"────────────────\n\n"
         f"💰 <b>Qancha avans kerak?</b>\n\n"
     )
@@ -136,12 +146,13 @@ async def process_advance_request(message: Message, state: FSMContext):
         # Admin(lar)ga so'rov yuborish (MULTI-ADMIN)
         if ADMIN_LIST:
             from utils.keyboards import approval_kb
+            now = get_tashkent_time()
             request_text = (
-                f"🔔 {format_bold('YANGI AVANS SO\'ROVI')}\n"
+                f"🔔 {format_bold('YANGI AVANS SOROVI')}\n"
                 f"────────────────\n\n"
                 f"👤 <b>Ishchi:</b> {stats['name']}\n"
                 f"💰 <b>Summa:</b> {amount:,.0f} so'm\n"
-                f"📅 <b>Vaqt:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+                f"📅 <b>Vaqt:</b> {now.strftime('%d.%m.%Y %H:%M')}"
             )
             
             # Har bir adminga xabar yuborish
@@ -156,11 +167,12 @@ async def process_advance_request(message: Message, state: FSMContext):
                     logging.warning(f"Admin {admin_id} ga xabar yuborib bo'lmadi: {e}")
         
         # Ishchiga tasdiqlash xabari
+        now = get_tashkent_time()
         success_text = (
-            f"✅ {format_bold('SO\'ROV YUBORILDI')}\n"
+            f"✅ {format_bold('SOROV YUBORILDI')}\n"
             f"────────────────\n\n"
             f"💰 <b>Summa:</b> {amount:,.0f} so'm\n"
-            f"📅 <b>Vaqt:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
+            f"📅 <b>Vaqt:</b> {now.strftime('%d.%m.%Y %H:%M')}\n\n"
             f"⏳ <i>Admin javobini kuting...</i>\n"
             f"📩 Tasdiqlash/rad etish haqida xabar beramiz."
         )
@@ -170,3 +182,5 @@ async def process_advance_request(message: Message, state: FSMContext):
         
     except ValueError:
         await message.answer("⚠️ <b>Iltimos, faqat raqam kiriting!</b>")
+
+
