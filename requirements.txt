@@ -3,4 +3,3 @@ asyncpg
 openpyxl
 python-dotenv
 apscheduler
-pandas
