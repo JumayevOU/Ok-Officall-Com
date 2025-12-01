@@ -93,8 +93,9 @@ async def start_advance_request(message: Message, state: FSMContext):
     # Maksimal avans miqdorini hisoblash
     max_advance = (stats['hours'] * stats['rate']) * 0.7  # 70% chegarasi
     
+    # XATOLIK TUZATILDI: 'SO\'RASH' -> 'SORASH'
     prompt_text = (
-        f"💸 {format_bold('AVANS SO\\'RASH')}\n"
+        f"💸 {format_bold('AVANS SORASH')}\n"
         f"────────────────\n\n"
         f"💰 <b>Qancha avans kerak?</b>\n\n"
     )
