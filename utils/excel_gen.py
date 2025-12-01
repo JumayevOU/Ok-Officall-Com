@@ -1,217 +1,186 @@
-import calendar
-from datetime import datetime, date
-from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-from openpyxl.utils import get_column_letter
-from typing import Dict, List, Any
+from aiogram import Router, F
+from aiogram.types import Message, CallbackQuery
+from aiogram.fsm.context import FSMContext
+from utils.keyboards import worker_main_kb, cancel_kb
+from utils.states import WorkerAdvance
+from database import requests as db
+import os
 import logging
+from datetime import datetime, timedelta
+from typing import Dict, List
 
-# --- STILLAR VA FORMATLAR ---
-class ExcelStyles:
-    # Ranglar
-    HEADER_FILL = PatternFill(start_color="FFD966", end_color="FFD966", fill_type="solid")
-    BLOCK_FILL = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
-    ABSENT_FILL = PatternFill(start_color="F4CCCC", end_color="F4CCCC", fill_type="solid")
-    POSITIVE_FILL = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
-    WARNING_FILL = PatternFill(start_color="FFE699", end_color="FFE699", fill_type="solid")
-    
-    # Shriftlar
-    TITLE_FONT = Font(bold=True, name='Arial', size=14)
-    HEADER_FONT = Font(bold=True, name='Arial', size=11)
-    DATA_FONT = Font(name='Arial', size=10)
-    BOLD_FONT = Font(bold=True, name='Arial', size=10)
-    
-    # Joylashuv
-    CENTER_ALIGN = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    LEFT_ALIGN = Alignment(horizontal="left", vertical="center")
-    RIGHT_ALIGN = Alignment(horizontal="right", vertical="center")
-    
-    # Chegaralar
-    THIN_BORDER = Border(
-        left=Side(style='thin'), right=Side(style='thin'),
-        top=Side(style='thin'), bottom=Side(style='thin')
-    )
+router = Router()
 
-# O'zbekcha oy nomlari
-MONTHS_UZ = {
-    1: "YANVAR", 2: "FEVRAL", 3: "MART", 4: "APREL", 5: "MAY", 6: "IYUN",
-    7: "IYUL", 8: "AVGUST", 9: "SENTABR", 10: "OKTABR", 11: "NOYABR", 12: "DEKABR"
+# --- ADMINLAR RO'YXATI (Multi-Admin) ---
+ADMIN_LIST: List[int] = []
+try:
+    env_admins = os.getenv("ADMIN_ID", "")
+    ADMIN_LIST = [int(id_str.strip()) for id_str in env_admins.split(",") if id_str.strip()]
+except (ValueError, TypeError):
+    logging.warning("ADMIN_ID worker.py da to'g'ri o'qilmadi")
+
+# Avans so'rovlari
+advance_requests: Dict[int, float] = {}
+
+# Oylar tarjimasi
+MONTHS = {
+    1: "Yanvar", 2: "Fevral", 3: "Mart", 4: "Aprel",
+    5: "May", 6: "Iyun", 7: "Iyul", 8: "Avgust",
+    9: "Sentabr", 10: "Oktabr", 11: "Noyabr", 12: "Dekabr"
 }
 
-def generate_report(year: int, month: int, workers_data: List[Dict], 
-                   attendance_data: Dict, advances_data: Dict) -> str:
-    """
-    Excel hisobot yaratish (location siz)
-    """
+def format_bold(text: str) -> str:
+    """Matnni qalin qilish"""
+    return f"<b>{text}</b>"
+
+def get_tashkent_time():
+    """Toshkent vaqti (UTC+5)"""
+    return datetime.utcnow() + timedelta(hours=5)
+
+# --- SHAXSIY HISOB ---
+@router.message(F.text == "💰 Mening hisobim")
+async def show_worker_stats(message: Message):
+    """Ishchi statistikasini ko'rsatish"""
+    stats = await db.get_worker_stats(message.from_user.id)
+    
+    if not stats:
+        await message.answer(
+            "❌ <b>Ma'lumot topilmadi</b>\n\n"
+            "ℹ️ Profilingiz topilmadi yoki hali ma'lumot kiritilmagan."
+        )
+        return
+    
+    # Hisob-kitoblar
+    salary = stats['hours'] * stats['rate']
+    net_salary = salary - stats['advance']
+    
+    now = get_tashkent_time()
+    month_name = MONTHS.get(now.month, str(now.month))
+    
+    stats_text = (
+        f"🧾 {format_bold('SHAXSIY HISOB')}\n"
+        f"🗓 {month_name} {now.year}\n"
+        f"────────────────\n\n"
+        f"👤 <b>{stats['name']}</b>\n"
+        f"💎 <b>Soatlik stavka:</b> {stats['rate']:,.0f} so'm\n\n"
+        f"📊 <b>Joriy oy statistikasi:</b>\n"
+        f"⏱ Ishlangan soat: <b>{stats['hours']}</b>\n"
+        f"💵 Hisoblangan: <b>{salary:,.0f} so'm</b>\n"
+        f"💸 Avanslar: <b>{stats['advance']:,.0f} so'm</b>\n"
+        f"────────────────\n"
+        f"💰 <b>Qo'lga tegadi: {net_salary:,.0f} so'm</b>\n\n"
+    )
+    
+    if net_salary < 0:
+        stats_text += "⚠️ <i>Avanslar hisoblangan summandan oshib ketgan</i>"
+    elif stats['hours'] == 0:
+        stats_text += "ℹ️ <i>Hozircha ishlagan soatingiz mavjud emas</i>"
+    else:
+        stats_text += "✅ <i>Ma'lumotlar joriy oy uchun</i>"
+    
+    await message.answer(stats_text, reply_markup=worker_main_kb())
+
+# --- AVANS SO'RASH ---
+@router.message(F.text == "💸 Avans so'rash")
+async def start_advance_request(message: Message, state: FSMContext):
+    """Avans so'rovini boshlash"""
+    # Avval stats ni tekshirish
+    stats = await db.get_worker_stats(message.from_user.id)
+    if not stats:
+        await message.answer("❌ <b>Profil ma'lumotlari topilmadi</b>")
+        return
+    
+    # Maksimal avans miqdorini hisoblash
+    max_advance = (stats['hours'] * stats['rate']) * 0.7  # 70% chegarasi
+    
+    prompt_text = (
+        f"💸 {format_bold('AVANS SO\\'RASH')}\n"
+        f"────────────────\n\n"
+        f"💰 <b>Qancha avans kerak?</b>\n\n"
+    )
+    
+    if max_advance > 0:
+        prompt_text += (
+            f"ℹ️ <b>Maksimal ruxsat etilgan:</b> {max_advance:,.0f} so'm\n"
+            f"(Joriy ishlaganligingizning 70% i)\n\n"
+        )
+    
+    prompt_text += "<i>Faqat raqam kiriting (so'mda). Masalan: 500000</i>"
+    
+    await state.set_state(WorkerAdvance.enter_amount)
+    await message.answer(prompt_text, reply_markup=cancel_kb)
+
+@router.message(WorkerAdvance.enter_amount)
+async def process_advance_request(message: Message, state: FSMContext):
+    """Avans so'rov miqdorini qabul qilish"""
+    if message.text == "❌ Bekor qilish":
+        await state.clear()
+        await message.answer("✅ Amal bekor qilindi", reply_markup=worker_main_kb())
+        return
+    
     try:
-        wb = Workbook()
-        ws = wb.active
-        ws.title = f"{month:02d}-{year}"
+        amount = float(message.text.strip())
         
-        # Ma'lumotlarni saralash (faqat ism bo'yicha)
-        workers_data.sort(key=lambda x: x['name'])
+        if amount <= 0:
+            await message.answer("⚠️ <b>Iltimos, 0 dan katta raqam kiriting</b>")
+            return
         
-        num_days = calendar.monthrange(year, month)[1]
-        styles = ExcelStyles()
+        # Maksimal avans chegarasini tekshirish
+        stats = await db.get_worker_stats(message.from_user.id)
+        if not stats:
+            await state.clear()
+            await message.answer("❌ <b>Profil ma'lumotlari topilmadi</b>", reply_markup=worker_main_kb())
+            return
         
-        # SARLAVHA YARATISH
-        _create_header(ws, year, month, num_days, styles)
+        max_advance = (stats['hours'] * stats['rate']) * 0.7
         
-        # ISHCHI MA'LUMOTLARINI QO'SHISH
-        _add_worker_data(ws, workers_data, attendance_data, advances_data, 
-                        year, month, num_days, styles)
+        if max_advance > 0 and amount > max_advance:
+            await message.answer(
+                f"⚠️ <b>Avans miqdori chegaradan oshib ketdi!</b>\n\n"
+                f"💰 So'ralgan: {amount:,.0f} so'm\n"
+                f"📊 Maksimal: {max_advance:,.0f} so'm\n\n"
+                f"ℹ️ Iltimos, {max_advance:,.0f} so'm dan kamroq summa kiriting."
+            )
+            return
         
-        # AUTOSIZE USTUNLAR
-        _auto_adjust_columns(ws, num_days)
+        # Admin(lar)ga so'rov yuborish (MULTI-ADMIN)
+        if ADMIN_LIST:
+            from utils.keyboards import approval_kb
+            now = get_tashkent_time()
+            request_text = (
+                f"🔔 {format_bold('YANGI AVANS SOROVI')}\n"
+                f"────────────────\n\n"
+                f"👤 <b>Ishchi:</b> {stats['name']}\n"
+                f"💰 <b>Summa:</b> {amount:,.0f} so'm\n"
+                f"📅 <b>Vaqt:</b> {now.strftime('%d.%m.%Y %H:%M')}"
+            )
+            
+            # Har bir adminga xabar yuborish
+            for admin_id in ADMIN_LIST:
+                try:
+                    await message.bot.send_message(
+                        admin_id,
+                        request_text,
+                        reply_markup=approval_kb(message.from_user.id, amount)
+                    )
+                except Exception as e:
+                    logging.warning(f"Admin {admin_id} ga xabar yuborib bo'lmadi: {e}")
         
-        # FAYLNI SAQLASH
-        filename = f"hisobot_{MONTHS_UZ[month]}_{year}.xlsx"
-        wb.save(filename)
-        logging.info(f"✅ Excel hisobot yaratildi: {filename}")
-        return filename
+        # Ishchiga tasdiqlash xabari
+        now = get_tashkent_time()
+        success_text = (
+            f"✅ {format_bold('SOROV YUBORILDI')}\n"
+            f"────────────────\n\n"
+            f"💰 <b>Summa:</b> {amount:,.0f} so'm\n"
+            f"📅 <b>Vaqt:</b> {now.strftime('%d.%m.%Y %H:%M')}\n\n"
+            f"⏳ <i>Admin javobini kuting...</i>\n"
+            f"📩 Tasdiqlash/rad etish haqida xabar beramiz."
+        )
         
-    except Exception as e:
-        logging.error(f"❌ Excel hisobot yaratishda xato: {e}")
-        raise
+        await message.answer(success_text, reply_markup=worker_main_kb())
+        await state.clear()
+        
+    except ValueError:
+        await message.answer("⚠️ <b>Iltimos, faqat raqam kiriting!</b>")
 
-def _create_header(ws, year, month, num_days, styles):
-    """Sarlavha va ustunlarni yaratish"""
-    # Asosiy sarlavha
-    month_name = MONTHS_UZ.get(month, f"OY-{month}")
-    total_cols = 2 + num_days + 5  # № + Ism + Kunlar + Hisob ustunlari
-    
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=total_cols)
-    title_cell = ws.cell(1, 1, f"{month_name} {year} - DAVOMAT VA HISOBOT")
-    title_cell.font = styles.TITLE_FONT
-    title_cell.alignment = styles.CENTER_ALIGN
-    title_cell.fill = styles.HEADER_FILL
-    
-    # Ustun sarlavhalari
-    headers = ["№", "F.I.O"] + [str(day) for day in range(1, num_days + 1)] + [
-        "Soatlik narx", "Jami soat", "Avans", "Hisoblangan", "Qo'lga tegadi"
-    ]
-    
-    for col, header in enumerate(headers, 1):
-        cell = ws.cell(2, col, header)
-        cell.font = styles.HEADER_FONT
-        cell.fill = styles.HEADER_FILL
-        cell.alignment = styles.CENTER_ALIGN
-        cell.border = styles.THIN_BORDER
-        
-        # Ustun kengliklari
-        if col == 1:  # №
-            ws.column_dimensions[get_column_letter(col)].width = 6
-        elif col == 2:  # F.I.O
-            ws.column_dimensions[get_column_letter(col)].width = 35
-        elif 3 <= col <= num_days + 2:  # Kunlar
-            ws.column_dimensions[get_column_letter(col)].width = 5
-        else:  # Hisob ustunlari
-            ws.column_dimensions[get_column_letter(col)].width = 12
 
-def _add_worker_data(ws, workers_data, attendance_data, advances_data, 
-                    year, month, num_days, styles):
-    """Ishchi ma'lumotlarini qo'shish (location siz)"""
-    current_row = 3
-    
-    for idx, worker in enumerate(workers_data, 1):
-        # ISHCHI QATORI
-        _add_worker_row(ws, current_row, idx, worker, attendance_data, 
-                       advances_data, year, month, num_days, styles)
-        current_row += 1
-
-def _add_worker_row(ws, row, counter, worker, attendance_data, advances_data,
-                   year, month, num_days, styles):
-    """Ishchi qatorini qo'shish (location siz)"""
-    # № va Ism
-    ws.cell(row, 1, counter).border = styles.THIN_BORDER
-    ws.cell(row, 1).alignment = styles.CENTER_ALIGN
-    
-    ws.cell(row, 2, worker['name']).border = styles.THIN_BORDER
-    ws.cell(row, 2).alignment = styles.LEFT_ALIGN
-    ws.cell(row, 2).font = styles.DATA_FONT
-    
-    # DAVOMAT KUNLARI
-    total_hours = 0
-    
-    # created_at va archived_at ni xavfsiz olish
-    created_at = worker.get('created_at')
-    archived_at = worker.get('archived_at')
-    
-    # Agar created_at bo'lmasa, oyning birinchi kuni deb olamiz
-    if created_at is None:
-        created_at = date(year, month, 1)
-    elif isinstance(created_at, datetime):
-        created_at = created_at.date()
-    
-    # Agar archived_at bo'lmasa, None qoldiramiz
-    if archived_at and isinstance(archived_at, datetime):
-        archived_at = archived_at.date()
-    
-    for day in range(1, num_days + 1):
-        col = day + 2
-        current_date = date(year, month, day)
-        date_key = f"{year}-{month:02d}-{day:02d}"
-        
-        cell = ws.cell(row, col)
-        cell.border = styles.THIN_BORDER
-        cell.alignment = styles.CENTER_ALIGN
-        
-        # Ishlamagan kunlarni belgilash
-        if (current_date < created_at) or (archived_at and current_date > archived_at):
-            cell.fill = styles.ABSENT_FILL
-        else:
-            hours = attendance_data.get((worker['id'], date_key), 0)
-            if hours > 0:
-                cell.value = hours
-                cell.font = styles.DATA_FONT
-                total_hours += hours
-            else:
-                cell.fill = styles.ABSENT_FILL
-    
-    # HISOB-KITOBlAR
-    start_calc = num_days + 3
-    rate = float(worker['rate'])
-    advance = advances_data.get(worker['id'], 0)
-    calculated = total_hours * rate
-    net_amount = calculated - advance
-    
-    # Soatlik narx
-    ws.cell(row, start_calc, rate).border = styles.THIN_BORDER
-    ws.cell(row, start_calc).number_format = '#,##0'
-    
-    # Jami soat
-    cell = ws.cell(row, start_calc + 1, total_hours)
-    cell.border = styles.THIN_BORDER
-    cell.font = styles.BOLD_FONT
-    cell.alignment = styles.CENTER_ALIGN
-    
-    # Avans
-    ws.cell(row, start_calc + 2, advance).border = styles.THIN_BORDER
-    ws.cell(row, start_calc + 2).number_format = '#,##0'
-    
-    # Hisoblangan
-    ws.cell(row, start_calc + 3, calculated).border = styles.THIN_BORDER
-    ws.cell(row, start_calc + 3).number_format = '#,##0'
-    
-    # Qo'lga tegadi
-    cell = ws.cell(row, start_calc + 4, net_amount)
-    cell.border = styles.THIN_BORDER
-    cell.font = styles.BOLD_FONT
-    cell.number_format = '#,##0'
-    cell.fill = styles.POSITIVE_FILL if net_amount >= 0 else styles.WARNING_FILL
-
-def _auto_adjust_columns(ws, num_days):
-    """Ustunlarni avtomatik sozlash"""
-    for column in ws.columns:
-        max_length = 0
-        column_letter = get_column_letter(column[0].column)
-        
-        for cell in column:
-            try:
-                if cell.value:
-                    max_length = max(max_length, len(str(cell.value)))
-            except:
-                pass
-        
-        adjusted_width = min(max_length + 2, 50)
-        ws.column_dimensions[column_letter].width = adjusted_width
