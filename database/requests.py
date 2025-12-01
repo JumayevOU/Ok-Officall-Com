@@ -1,17 +1,20 @@
 import asyncpg
 import os
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import calendar
 from typing import List, Dict, Any, Optional
-# DIQQAT: DB_POOL ni to'g'ridan-to'g'ri import qilmang, models ni import qiling
 from database import models
 
 class DatabaseError(Exception):
     pass
 
+# --- TIZIM VAQTI (TOSHKENT) ---
+def get_tashkent_time():
+    """Hozirgi vaqtga 5 soat qo'shish"""
+    return datetime.utcnow() + timedelta(hours=5)
+
 async def execute_query(query: str, *args) -> Any:
-    # models.DB_POOL orqali murojaat qilamiz, shunda u har doim yangi bo'ladi
     if not models.DB_POOL:
         logging.error("❌ Database pool mavjud emas (execute_query) - Baza ulanmagan!")
         return []
@@ -27,15 +30,15 @@ async def execute_query(query: str, *args) -> Any:
         logging.error(f"❌ DB Xatosi: {e}\nQuery: {query}\nArgs: {args}")
         return []
 
-# --- YANGI: UMUMIY STATISTIKA ---
+# --- YANGI: UMUMIY STATISTIKA (Toshkent vaqti bilan) ---
 async def get_general_statistics() -> Dict[str, Any]:
     try:
         # 1. Jami aktiv ishchilar
         res_workers = await execute_query("SELECT COUNT(*) as cnt FROM workers WHERE active = TRUE")
         total_workers = res_workers[0]['cnt'] if res_workers else 0
         
-        # Joriy oy
-        month_str = datetime.now().strftime("%Y-%m")
+        # Joriy oy (Toshkent vaqti)
+        month_str = get_tashkent_time().strftime("%Y-%m")
         
         # 2. Jami soat (Joriy oy)
         res_hours = await execute_query("""
@@ -51,7 +54,7 @@ async def get_general_statistics() -> Dict[str, Any]:
         """, month_str)
         total_advance = float(res_adv[0]['total']) if res_adv and res_adv[0]['total'] else 0.0
         
-        # 4. Top ishchi (Eng ko'p soat ishlagan)
+        # 4. Top ishchi
         res_top = await execute_query("""
             SELECT w.name, SUM(a.hours) as total_h
             FROM attendance a
@@ -85,6 +88,8 @@ async def add_worker(name: str, rate: float, code: int) -> bool:
         exists = await execute_query("SELECT 1 FROM workers WHERE code = $1", code)
         if exists: return False
         
+        # created_at ni baza o'zi hal qiladi (CURRENT_DATE), lekin server vaqti muhim bo'lsa
+        # Toshkent sanasini jo'natishimiz mumkin. Hozircha DB ga qo'yamiz.
         await execute_query(
             "INSERT INTO workers (name, rate, code, active, created_at) VALUES ($1, $2, $3, TRUE, CURRENT_DATE)", 
             name.strip(), float(rate), int(code)
@@ -123,15 +128,18 @@ async def archive_worker(worker_id: int) -> bool:
         return True
     except: return False
 
-# --- DAVOMAT ---
+# --- DAVOMAT (Sanani Toshkent vaqti bilan olish) ---
 async def add_attendance(worker_id: int, hours: float, status: str) -> bool:
     try:
+        # Hozirgi sana (Toshkent bo'yicha)
+        tashkent_date = get_tashkent_time().date()
+        
         await execute_query("""
             INSERT INTO attendance (worker_id, date, hours, status) 
-            VALUES ($1, CURRENT_DATE, $2, $3)
+            VALUES ($1, $2, $3, $4)
             ON CONFLICT (worker_id, date) 
             DO UPDATE SET hours = EXCLUDED.hours, status = EXCLUDED.status
-        """, worker_id, float(hours), status)
+        """, worker_id, tashkent_date, float(hours), status)
         return True
     except Exception as e:
         logging.error(f"add_attendance error: {e}")
@@ -139,9 +147,10 @@ async def add_attendance(worker_id: int, hours: float, status: str) -> bool:
 
 async def add_advance(worker_id: int, amount: float, approved: bool = True) -> bool:
     try:
+        tashkent_date = get_tashkent_time().date()
         await execute_query(
-            "INSERT INTO advances (worker_id, date, amount, approved) VALUES ($1, CURRENT_DATE, $2, $3)",
-            worker_id, float(amount), approved
+            "INSERT INTO advances (worker_id, date, amount, approved) VALUES ($1, $2, $3, $4)",
+            worker_id, tashkent_date, float(amount), approved
         )
         return True
     except Exception as e:
@@ -217,7 +226,8 @@ async def get_worker_stats(telegram_id: int) -> Optional[Dict[str, Any]]:
     if not rows: return None
     
     worker = dict(rows[0])
-    month = datetime.now().strftime("%Y-%m")
+    # TIZIM VAQTINI ISHLATISH (Toshkent)
+    month = get_tashkent_time().strftime("%Y-%m")
     
     h_data = await execute_query("SELECT SUM(hours) as t FROM attendance WHERE worker_id=$1 AND TO_CHAR(date, 'YYYY-MM')=$2", worker['id'], month)
     a_data = await execute_query("SELECT SUM(amount) as t FROM advances WHERE worker_id=$1 AND TO_CHAR(date, 'YYYY-MM')=$2 AND approved=TRUE", worker['id'], month)
@@ -231,3 +241,5 @@ async def get_worker_stats(telegram_id: int) -> Optional[Dict[str, Any]]:
         "hours": total_hours,
         "advance": total_adv
     }
+
+
