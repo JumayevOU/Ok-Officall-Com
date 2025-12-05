@@ -10,8 +10,8 @@ def admin_main_kb():
     """Admin asosiy menyusi"""
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="👥 Ishchilar"), KeyboardButton(text="📊 Joriy holat")],
-            [KeyboardButton(text="💰 Avans yozish"), KeyboardButton(text="📝 Bugungi hisobot")],
+            [KeyboardButton(text="📝 Bugungi hisobot"), KeyboardButton(text="📊 Joriy holat")],
+            [KeyboardButton(text="👥 Ishchilar"), KeyboardButton(text="💰 Avans yozish")],
             [KeyboardButton(text="📥 Excel hisobot"), KeyboardButton(text="⚙️ Sozlamalar")]
         ],
         resize_keyboard=True,
