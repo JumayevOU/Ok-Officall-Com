@@ -3,7 +3,7 @@ from aiogram.types import Message, CallbackQuery, FSInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
 from utils.states import AddWorker, EditWorker, DeleteWorker, DailyReport, AdminAdvance
-from utils.keyboards import admin_main_kb, cancel_kb, settings_kb, edit_options_kb, approval_kb, remove_kb
+from utils.keyboards import admin_main_kb, cancel_kb, settings_kb, edit_options_kb, approval_kb, remove_kb, report_kb
 from database import requests as db
 from utils.excel_gen import generate_report
 import os
@@ -93,11 +93,14 @@ async def show_workers_list(message: Message, state: FSMContext):
         current_text = header
         
         for worker in workers:
+            # Login qilganmi yoki yo'q (telegram_id borligiga qarab)
+            status_icon = "🟢" if worker.get('telegram_id') else "⚪️"
+            
             worker_info = (
-                f"🆔 <b>ID:</b> <code>{worker['id']}</code>\n"
+                f"{status_icon} 🆔 <b>ID:</b> <code>{worker['id']}</code>\n"
                 f"👤 <b>Ism:</b> {worker['name']}\n"
                 f"💰 <b>Stavka:</b> {worker['rate']:,.0f} so'm/soat\n"
-                f"🔑 <b>KIRISH KODI:</b> <code>{worker['code']}</code>\n"
+                f"🔑 <b>KOD:</b> <code>{worker['code']}</code>\n"
                 f"➖➖➖➖➖➖➖➖➖➖➖\n"
             )
             
@@ -109,7 +112,7 @@ async def show_workers_list(message: Message, state: FSMContext):
             current_text += worker_info
         
         # Oxirgi qismni va footer ni qo'shib jo'natamiz
-        footer = "\n👇 <i>O'zgartirish kiritish uchun 'Sozlamalar' menyusidan foydalaning</i>"
+        footer = "\n👇 <i>O'zgartirish kiritish uchun 'Sozlamalar' menyusidan foydalaning</i>\n🟢 - Botga ulangan\n⚪️ - Hali kirmagan"
         
         if len(current_text) + len(footer) > 4000:
              await message.answer(current_text)
@@ -415,11 +418,23 @@ async def show_report_step(message: Message, state: FSMContext):
         return
     
     worker = workers[idx]
+    # report_kb ishlatilmoqda (O'tkazib yuborish tugmasi bor)
     await message.answer(
         f"👤 <b>{worker['name']}</b> ({idx+1}/{len(workers)})\n\n"
         f"Bugun necha soat ishladi? (0 = kelmadi)",
-        reply_markup=cancel_kb
+        reply_markup=report_kb
     )
+
+# YANGI: O'tkazib yuborish handler
+@router.message(DailyReport.enter_hours, F.text == "➡️ O'tkazib yuborish")
+async def skip_report_item(message: Message, state: FSMContext):
+    user_data = fsm_data.get(message.from_user.id)
+    if not user_data: return
+    
+    # Shunchaki indeksni oshiramiz, bazaga hech narsa yozmaymiz
+    user_data['index'] += 1
+    await message.answer("⏩ O'tkazib yuborildi.")
+    await show_report_step(message, state)
 
 @router.message(DailyReport.enter_hours)
 async def process_report_hours(message: Message, state: FSMContext):
